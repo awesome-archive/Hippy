@@ -1,21 +1,49 @@
 import React from 'react';
 import {
+  View,
   ScrollView,
   StyleSheet,
   NetInfo,
   Text,
   NetworkModule,
-} from 'hippy-react';
+} from '@hippy/react';
 
 const styles = StyleSheet.create({
-  text: {
-    fontSize: 14,
-    color: '#242424',
-    alignSelf: 'center',
-  },
-  container: {
-    flex: 1,
+  itemTitle: {
+    alignItems: 'flex-start',
     justifyContent: 'center',
+    height: 40,
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: '#e0e0e0',
+    borderRadius: 2,
+    backgroundColor: '#fafafa',
+    padding: 10,
+    marginTop: 10,
+  },
+  wrapper: {
+    borderColor: '#eee',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginVertical: 10,
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
+  },
+  infoContainer: {
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    marginTop: 5,
+    marginBottom: 5,
+    flexWrap: 'wrap',
+  },
+  infoText: {
+    collapsable: false,
+    marginVertical: 5,
   },
 });
 
@@ -23,76 +51,131 @@ export default class NetInfoExample extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
-      infoText: '正在获取..',
+      netInfoStatusTxt: '',
+      netInfoChangeTxt: '',
+      fetchInfoTxt: '',
+      cookies: '',
     };
     this.listener = null;
   }
 
-  async componentWillMount() {
-    const self = this;
-    const netInfo = await NetInfo.fetch();
+  async fetchNetInfoStatus() {
     this.setState({
-      infoText: netInfo,
+      netInfoStatusTxt: await NetInfo.fetch(),
     });
-    this.listener = NetInfo.addEventListener('change', (info) => {
-      self.setState({
-        infoText: `收到通知: ${info.network_info}`,
+  }
+
+  fetchUrl() {
+    fetch('https://hippyjs.org', {
+      mode: 'no-cors', // 2.14.0 or above supports other options(not only method/headers/url/body)
+    }).then((responseJson) => {
+      this.setState({
+        fetchInfoTxt: `成功状态: ${responseJson.status}`,
+      });
+      return responseJson;
+    })
+      .catch((error) => {
+        this.setState({
+          fetchInfoTxt: `收到错误: ${error}`,
+        });
+      });
+  }
+
+  setCookies() {
+    /**
+     * hippy 设置指定url下的Cookie
+     * @param {string} url指定网址，如：https://hippyjs.org
+     * @param {string} keyValue cookie key-value键值对集合，多个以分号";"隔开，如：name=hippy。或者：name=hippy;network=mobile
+     * @param {Date} expires 过期时间，默认为空，格式与http协议头response里的Set-Cookie相同，如：Thu, 08-Jan-2020 00:00:00 GMT
+     * 注意：指定 expires 的时候，只能设置一个cookie；如果不指定expires的时候，可以设置多个cookie：name=hippy;network=mobile
+     */
+    NetworkModule.setCookie('https://hippyjs.org', 'name=hippy;network=mobile');
+  }
+
+  getCookies() {
+    /**
+     * hippy 获取指定 url 下的所有 cookies
+     * @param url指定网址，如：https://hippyjs.org
+     * @return 返回url下的所有cookies，如：name=hippy;network=mobile
+     */
+    NetworkModule.getCookies('https://hippyjs.org').then((cookies) => {
+      this.setState({
+        cookies,
       });
     });
   }
 
-  componentDidMount() {
+  async componentWillMount() {
     const self = this;
+    this.listener = NetInfo.addEventListener('change', (info) => {
+      self.setState({
+        netInfoChangeTxt: `${info.network_info}`,
+      });
+    });
+  }
+
+  componentWillUnmount() {
     if (this.listener) {
       NetInfo.removeEventListener('change', this.listener);
     }
+  }
 
-    fetch('https://m.baidu.com', {
-      headers: {
-        Refer: 'https://now.qq.com',
-        Cookie: ['harry=guo5', 'xxx=5'],
-      },
-    }).then((responseJson) => {
-      // eslint-disable-next-line no-console
-      console.error(responseJson);
-      self.setState({
-        infoText: `成功: ${responseJson.body}`,
-      });
-      return responseJson;
-    }).catch((error) => {
-      self.setState({
-        infoText: `收到错误: ${error}`,
-      });
-      // eslint-disable-next-line no-console
-      console.error(error);
-    });
-
-    /**
-     * hippy sdk 1.3.0+ setCookie 设置指定url下的Cookie
-     * @param url 指定url，其实也就是指定作用域，如：http://3g.qq.com
-     * @param keyValue cookie key-value键值对集合，多个以分号";"隔开，如：name=harryguo。或者：name=harryguo;gender=male
-     * @param expires 默认为空 过期时间，格式与http协议头response里的Set-Cookie相同，如：Thu, 08-Jan-2020 00:00:00 GMT
-     * 注意：指定expires的时候，只能设置一个cookie；如果不指定expires的时候，可以设置多个cookie：name=harryguo;gender=male
-     */
-    // setCookie("http://3g.qq.com", "name=harryguo", "Thu, 08-Jan-2020 00:00:00 GMT");
-    NetworkModule.setCookie('http://3gxx.qq.com', 'name=harryguo;gender=male');
-
-    /**
-     * hippy sdk 1.3.0+ getCookie 获取指定url下的所有cookie
-     * @param url 指定url，其实也就是指定作用域，如：http://3g.qq.com
-     * @return 指定url下的所有cookie，如：eqid=deleted;bd_traffictrace=012146;BDSVRTM=418
-     */
-    NetworkModule.getCookies('http://3gxx.qq.com').then((cookie) => {
-      // eslint-disable-next-line no-console
-      console.log(`cookie: ${cookie}`);
-    });
+  componentDidMount() {
+    this.fetchUrl();
+    this.fetchNetInfoStatus();
   }
 
   render() {
-    const { infoText } = this.state;
+    const { netInfoStatusTxt, fetchInfoTxt, netInfoChangeTxt, cookies } = this.state;
+    const renderTitle = title => (
+      <View style={styles.itemTitle}>
+        <Text>{title}</Text>
+      </View>
+    );
     return (
-      <ScrollView style={styles.container}>
-        <Text style={styles.text}>{infoText}</Text>
+      <ScrollView style={{ paddingHorizontal: 10 }}>
+        {renderTitle('Fetch')}
+        <View style={[styles.wrapper]}
+        >
+          <View style={[styles.infoContainer]}>
+            <View style={{ backgroundColor: 'grey', padding: 10, borderRadius: 10, marginRight: 10 }} onClick={() => this.fetchUrl()}>
+              <Text style={{ color: 'white' }}>请求 hippy 网址:</Text>
+            </View>
+            <Text style={styles.infoText}>{fetchInfoTxt}</Text>
+          </View>
+        </View>
+        {renderTitle('NetInfo')}
+        <View style={[styles.wrapper]}
+        >
+          <View style={[styles.infoContainer]}>
+            <View style={{ backgroundColor: 'grey', padding: 10, borderRadius: 10, marginRight: 10 }} onClick={() => this.fetchNetInfoStatus()}>
+              <Text style={{ color: 'white' }}>获取网络状态:</Text>
+            </View>
+            <Text style={styles.infoText}>{netInfoStatusTxt}</Text>
+          </View>
+          <View style={[styles.infoContainer]}>
+            <View style={{ backgroundColor: 'grey', padding: 10, borderRadius: 10, marginRight: 10 }}>
+              <Text style={{ color: 'white' }}>监听网络变化:</Text>
+            </View>
+            <Text style={styles.infoText}>{netInfoChangeTxt}</Text>
+          </View>
+        </View>
+        {renderTitle('NetworkModule')}
+        <View style={[styles.wrapper]}
+        >
+          <View style={[styles.infoContainer]}>
+            <View style={{ backgroundColor: 'grey', padding: 10, borderRadius: 10, marginRight: 10 }} onClick={() => this.setCookies()}>
+              <Text style={{ color: 'white' }}>设置Cookies：</Text>
+            </View>
+            <Text style={styles.infoText}>name=hippy;network=mobile</Text>
+          </View>
+          <View style={[styles.infoContainer]}>
+            <View style={{ backgroundColor: 'grey', padding: 10, borderRadius: 10, marginRight: 10 }} onClick={() => this.getCookies()}>
+              <Text style={{ color: 'white' }}>获取Cookies：</Text>
+            </View>
+            <Text style={styles.infoText}>{cookies}</Text>
+          </View>
+        </View>
       </ScrollView>
     );
   }

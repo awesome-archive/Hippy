@@ -29,13 +29,19 @@
 #import "HippyInvalidating.h"
 #import "HippyImageViewCustomLoader.h"
 #import "HippyCustomTouchHandlerProtocol.h"
+#import "HippyImageProviderProtocol.h"
+#import "HippyMethodInterceptorProtocol.h"
 
 @class JSValue;
 @class HippyBridge;
 @class HippyEventDispatcher;
 @class HippyPerformanceLogger;
 @class HippyUIManager;
-@class HippyExtAnimationModule;
+@class HippyNextAnimationModule;
+@class HippyOCTurboModule;
+
+NS_ASSUME_NONNULL_BEGIN
+
 extern NSString *const _HippySDKVersion;
 /**
  * This notification triggers a reload of all bridges currently running.
@@ -67,7 +73,6 @@ HIPPY_EXTERN NSString *const HippyJavaScriptDidFailToLoadNotification;
  */
 HIPPY_EXTERN NSString *const HippyDidInitializeModuleNotification;
 
-// MttRN: 业务代码已经成功加载的通知
 HIPPY_EXTERN NSString *const HippyBusinessDidLoadNotification;
 
 /**
@@ -78,52 +83,57 @@ HIPPY_EXTERN NSString *const HippyBusinessDidLoadNotification;
  * For this reason, the block should always return new module instances, and
  * module instances should not be shared between bridges.
  */
-typedef NSArray<id<HippyBridgeModule>> *(^HippyBridgeModuleProviderBlock)(void);
+typedef NSArray<id<HippyBridgeModule>> * _Nullable (^HippyBridgeModuleProviderBlock)(void);
 
 /**
  * This function returns the module name for a given class.
  */
 HIPPY_EXTERN NSString *HippyBridgeModuleNameForClass(Class bridgeModuleClass);
 
-
 /**
  * Async batched bridge used to communicate with the JavaScript application.
  */
 @interface HippyBridge : NSObject <HippyInvalidating>
-/**
- * Creates a new bridge with a custom HippyBridgeDelegate.
- *
- * All the interaction with the JavaScript context should be done using the bridge
- * instance of the HippyBridgeModules. Modules will be automatically instantiated
- * using the default contructor, but you can optionally pass in an array of
- * pre-initialized module instances if they require additional init parameters
- * or configuration.
- */
+
+/// Create A HippyBridge instance with a common js bundle.
+///
+/// @param delegate bridge delegate
+/// @param bundleURL the
+/// @param block for user-defined module
+/// @param launchOptions launch options, will not be sent to frontend
+/// @param executorKey key to engine instance. HippyBridge with same engine key will share same engine intance.
+///
+/// Note: 多个bridge使用相同的共享engineKey时，只有全部bridge实例销毁时engine资源才将释放，因此，请注意合理使用，避免出现意外的内存泄漏。
+/// 传空时默认不共享，SDK内部默认分配一随机key。
+///
+/// * All the interaction with the JavaScript context should be done using the bridge
+/// * instance of the HippyBridgeModules. Modules will be automatically instantiated
+/// * using the default contructor, but you can optionally pass in an array of
+/// * pre-initialized module instances if they require additional init parameters
+/// * or configuration.
 - (instancetype)initWithDelegate:(id<HippyBridgeDelegate>)delegate
-                   launchOptions:(NSDictionary *)launchOptions;
+                       bundleURL:(nullable NSURL *)bundleURL
+                  moduleProvider:(nullable HippyBridgeModuleProviderBlock)block
+                   launchOptions:(nullable NSDictionary *)launchOptions
+                     executorKey:(nullable NSString *)executorKey;
 
-/**
- * DEPRECATED: Use initWithDelegate:launchOptions: instead
- *
- * The designated initializer. This creates a new bridge on top of the specified
- * executor. The bridge should then be used for all subsequent communication
- * with the JavaScript code running in the executor. Modules will be automatically
- * instantiated using the default contructor, but you can optionally pass in an
- * array of pre-initialized module instances if they require additional init
- * parameters or configuration.
- */
-- (instancetype)initWithBundleURL:(NSURL *)bundleURL
-                   moduleProvider:(HippyBridgeModuleProviderBlock)block
-                    launchOptions:(NSDictionary *)launchOptions;
 
+#pragma mark -
 /**
  * This method is used to call functions in the JavaScript application context.
  * It is primarily intended for use by modules that require two-way communication
  * with the JavaScript code. Safe to call from any thread.
  */
 - (void)enqueueJSCall:(NSString *)moduleDotMethod args:(NSArray *)args;
-- (void)enqueueJSCall:(NSString *)module method:(NSString *)method args:(NSArray *)args completion:(dispatch_block_t)completion;
+- (void)enqueueJSCall:(NSString *)moduleName
+               method:(NSString *)method
+                 args:(NSArray *)args
+           completion:(nullable dispatch_block_t)completion;
 
+/**
+ * set up chrome dev tools connection
+ */
+- (void)setUpDevClientWithName:(NSString *)name;
 /**
  * This method is used to call functions in the JavaScript application context
  * synchronously.  This is intended for use by applications which do their own
@@ -135,10 +145,7 @@ HIPPY_EXTERN NSString *HippyBridgeModuleNameForClass(Class bridgeModuleClass);
  *
  * @experimental
  */
-- (JSValue *)callFunctionOnModule:(NSString *)module
-                           method:(NSString *)method
-                        arguments:(NSArray *)arguments
-                            error:(NSError **)error;
+- (JSValue *)callFunctionOnModule:(NSString *)module method:(NSString *)method arguments:(NSArray *)arguments error:(NSError **)error;
 
 /**
  * Retrieve a bridge module instance by name or class. Note that modules are
@@ -174,6 +181,17 @@ HIPPY_EXTERN NSString *HippyBridgeModuleNameForClass(Class bridgeModuleClass);
  */
 - (void)whitelistedModulesDidChange;
 
+/** A red box will show when error occurs by default
+ *  only work on HIPPY_DEBUG mode
+ */
+- (void)setRedBoxShowEnabled:(BOOL)enabled;
+
+/**
+ * Inspectable need to be set above ios16.4 system
+ * Default is YES for HIPPY_DEBUG mode
+ */
+- (void)setInspectable:(BOOL)isInspectable;
+
 /**
  * All registered bridge module classes.
  */
@@ -195,11 +213,12 @@ HIPPY_EXTERN NSString *HippyBridgeModuleNameForClass(Class bridgeModuleClass);
  */
 @property (nonatomic, weak, readonly) id<HippyBridgeDelegate> delegate;
 
-@property (nonatomic, weak, readonly) HippyExtAnimationModule *animationModule;
+@property (nonatomic, weak, readonly) HippyNextAnimationModule *animationModule;
 
-@property (nonatomic, strong, readonly) id <HippyImageViewCustomLoader> imageLoader;
-@property (nonatomic, strong, readonly) id <HippyCustomTouchHandlerProtocol> customTouchHandler;
-
+@property (nonatomic, strong, readonly) id<HippyImageViewCustomLoader> imageLoader;
+@property (nonatomic, strong, readonly) id<HippyCustomTouchHandlerProtocol> customTouchHandler;
+@property (nonatomic, strong, readonly) NSSet<Class<HippyImageProviderProtocol>> *imageProviders;
+@property (nonatomic, weak) id<HippyMethodInterceptorProtocol> methodInterceptor;
 /**
  * The launch options that were used to initialize the bridge.
  */
@@ -215,7 +234,6 @@ HIPPY_EXTERN NSString *HippyBridgeModuleNameForClass(Class bridgeModuleClass);
  */
 @property (nonatomic, readonly, getter=isValid) BOOL valid;
 
-//判断当前bridge载入JSBundle后是否发生过错误
 @property (nonatomic, readonly, getter=isErrorOccured) BOOL errorOccured;
 
 /**
@@ -237,24 +255,50 @@ HIPPY_EXTERN NSString *HippyBridgeModuleNameForClass(Class bridgeModuleClass);
  */
 - (BOOL)isBatchActive;
 
-// MttRN: 表示这个bridge是否使用了分包加载
 @property (nonatomic, assign) BOOL useCommonBridge;
 
-// MttRN: 表示是否是Debug模式
 @property (nonatomic, assign) BOOL debugMode;
 
-// MttRN: 共享数据通道
 @property (nonatomic, strong) NSMutableDictionary *shareOptions;
 
-// MttRN: bridge业务名, todo:单引擎的时候此值无效，多引擎的时候有效，目前为多引擎；
 @property (nonatomic, strong) NSString *moduleName;
 
-@property (nonatomic, strong) NSString *appVerson;//宿主App的版本号
+@property (nonatomic, assign) HippyInvalidateReason invalidateReason;
 
-/**
- * just for debugger
- */
-- (void)bindKeys;
+/// NightMode or not, default is NO.
+/// Updated by HippyRootView
+@property (atomic, assign, readonly) BOOL isOSNightMode;
 
+/// update `NightMode` state when changed
+/// - Parameter isOSNightMode: bool
+/// - Parameter rootViewTag: rootView's hippyTag
+- (void)setOSNightMode:(BOOL)isOSNightMode withRootViewTag:(NSNumber *)rootViewTag;
+
+
+#pragma mark - Turbo Module
+
+/// Whether TurboModule is enabled,
+/// default YES.
+@property (nonatomic, assign, readonly) BOOL enableTurbo;
+
+/// Turn on/off turbo module
+/// - Parameter enabled: YES or NO
+- (void)setTurboModuleEnabled:(BOOL)enabled;
+
+/// Get the turbo module for a given name.
+/// - Parameter name: module name
+- (HippyOCTurboModule *)turboModuleWithName:(NSString *)name;
 
 @end
+
+
+#pragma mark -
+
+@interface UIView(Bridge)
+
+@property(nonatomic, weak) HippyBridge *bridge;
+
+@end
+
+
+NS_ASSUME_NONNULL_END

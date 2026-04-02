@@ -1,29 +1,49 @@
-/* eslint-disable no-underscore-dangle */
+/*
+ * Tencent is pleased to support the open source community by making
+ * Hippy available.
+ *
+ * Copyright (C) 2017-2019 THL A29 Limited, a Tencent company.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 import React, { ReactElement, ReactNode } from 'react';
 import { callUIFunction } from '../modules/ui-manager-module';
+import Element from '../dom/element-node';
 
-interface PageSelectedEvent {
+export interface PageSelectedEvent {
   position: number;
 }
-interface PageScrollEvent {
+export interface PageScrollEvent {
   position: number;
   offset: number;
 }
 
-type PageScrollState = 'idle' | 'dragging' | 'settling';
+export type PageScrollState = 'idle' | 'dragging' | 'settling';
 
-interface PageScrollStateEvent {
+export interface PageScrollStateEvent {
   pageScrollState: PageScrollState;
 }
 
-interface ViewPagerProps {
+export interface ViewPagerProps {
+  style?: HippyTypes.StyleProp;
   /**
-   * Specifc initial page after rendering.
+   * Specific initial page after rendering.
    *
    * Default: 0
    */
-  initialPage: number;
+  initialPage?: number;
 
   /**
    * When `false`, the view cannot be scrolled via touch interaction.
@@ -33,14 +53,18 @@ interface ViewPagerProps {
    * > Note that the view can always be scrolled by calling setPage.
    */
   scrollEnabled?: boolean;
-
+  /**
+   * iOS only
+   * https://developer.apple.com/documentation/uikit/uiscrollview/keyboarddismissmode
+   */
+  keyboardDismissMode?: 'none' | 'on-drag' | 'interactive' | 'onDrag';
   /**
    * Fires at most once per page is selected
    *
    * @param {Object} evt - Page selected event data.
    * @param {number} evt.position - Page index of selected.
    */
-  onPageSelected?(evt: PageSelectedEvent): void;
+  onPageSelected?: (evt: PageSelectedEvent) => void;
 
   /**
    * Called when the page scroll starts.
@@ -49,22 +73,22 @@ interface ViewPagerProps {
    * @param {number} evt.position - Page index that will be selected.
    * @param {number} evt.offset - Scroll offset while scrolling.
    */
-  onPageScroll?(evt: PageScrollEvent): void;
+  onPageScroll?: (evt: PageScrollEvent) => void;
 
   /**
    * Called when the page scroll state changed.
    *
-   * @param {string} str - Page scroll state event data
+   * @param {string} evt - Page scroll state event data
    * This can be one of the following values:
    *
-   * * idel
+   * * idle
    * * dragging
    * * settling
    */
-  onPageScrollStateChanged?(evt: PageScrollState): void;
+  onPageScrollStateChanged?: (evt: PageScrollState) => void;
 }
 
-function ViewPagerItem(props: any) {
+export function ViewPagerItem(props: any) {
   return (
     <div
       nativeName="ViewPagerItem"
@@ -87,45 +111,39 @@ function ViewPagerItem(props: any) {
  * and will be stretched to fill the ViewPage.
  * @noInheritDoc
  */
-class ViewPager extends React.Component<ViewPagerProps, {}> {
-  private instance: HTMLDivElement | null = null;
+export class ViewPager extends React.Component<ViewPagerProps, {}> {
+  private instance: Element | HTMLDivElement | null = null;
 
-  /**
-   * @ignore
-   */
-  constructor(props: ViewPagerProps) {
+  public constructor(props: ViewPagerProps) {
     super(props);
     this.setPage = this.setPage.bind(this);
     this.setPageWithoutAnimation = this.setPageWithoutAnimation.bind(this);
     this.onPageScrollStateChanged = this.onPageScrollStateChanged.bind(this);
   }
 
-  private onPageScrollStateChanged(params: PageScrollStateEvent) {
+  public onPageScrollStateChanged(params: PageScrollStateEvent) {
     const { onPageScrollStateChanged } = this.props;
     if (onPageScrollStateChanged) {
       onPageScrollStateChanged(params.pageScrollState);
     }
   }
 
-  public setPage(selectedPage: number) {
+  public setPage(selectedPage: number | undefined) {
     if (typeof selectedPage !== 'number') {
       return;
     }
-    callUIFunction(this.instance, 'setPage', [selectedPage]);
+    callUIFunction(this.instance as Element, 'setPage', [selectedPage]);
   }
 
-  public setPageWithoutAnimation(selectedPage: number) {
+  public setPageWithoutAnimation(selectedPage: number | undefined) {
     if (typeof selectedPage !== 'number') {
       return;
     }
-    callUIFunction(this.instance, 'setPageWithoutAnimation', [selectedPage]);
+    callUIFunction(this.instance as Element, 'setPageWithoutAnimation', [selectedPage]);
   }
 
-  /**
-   * @ignore
-   */
   public render() {
-    const { children, onPageScrollStateChanged, ...nativeProps } = this.props;
+    const { children, onPageScrollStateChanged, style, ...nativeProps } = this.props;
     let mappedChildren: ReactElement[] = [];
     if (Array.isArray(children)) {
       mappedChildren = children.map((child: ReactNode) => {
@@ -133,6 +151,7 @@ class ViewPager extends React.Component<ViewPagerProps, {}> {
         if (typeof (child as ReactElement).key === 'string') {
           viewPageItemProps.key = `viewPager_${(child as ReactElement).key}`;
         }
+        // eslint-disable-next-line react/jsx-key
         return (<ViewPagerItem {...viewPageItemProps}>{child}</ViewPagerItem>);
       });
     } else {
@@ -142,15 +161,17 @@ class ViewPager extends React.Component<ViewPagerProps, {}> {
         </ViewPagerItem>
       ));
     }
-
     if (typeof onPageScrollStateChanged === 'function') {
       (nativeProps as any).onPageScrollStateChanged = this.onPageScrollStateChanged;
     }
-
     return (
       <div
         nativeName="ViewPager"
-        ref={(ref) => { this.instance = ref; }}
+        ref={(ref) => {
+          this.instance = ref;
+        }}
+        // @ts-ignore
+        style={style}
         {...nativeProps}
       >
         {mappedChildren}

@@ -21,8 +21,6 @@
  */
 
 #import "HippyUIManager.h"
-
-#import <AVFoundation/AVFoundation.h>
 #import "HippyAnimationType.h"
 #import "HippyAssert.h"
 #import "HippyBridge.h"
@@ -42,90 +40,61 @@
 #import "HippyUtils.h"
 #import "HippyView.h"
 #import "HippyViewManager.h"
-#import "UIView+React.h"
-#import "HippyExtAnimationViewParams.h"
-#import "HippyExtAnimationModule.h"
+#import "UIView+Hippy.h"
+#import "HippyNextAnimationViewParams.h"
+#import "HippyNextAnimationModule.h"
 #import "UIView+Private.h"
 #import "HippyVirtualNode.h"
 #import "HippyBaseListViewProtocol.h"
 #import "HippyMemoryOpt.h"
+#import "HippyDeviceBaseInfo.h"
+#import "HippyVirtualList.h"
+#import "HippyShadowText.h"
+#import "HippyShadowTextView.h"
+#import "HippyShadowView+MTTLayout.h"
+
+
 @protocol HippyBaseListViewProtocol;
 
-static void HippyTraverseViewNodes(id<HippyComponent> view, void (^block)(id<HippyComponent>))
-{
+static void HippyTraverseViewNodes(id<HippyComponent> view, void (^block)(id<HippyComponent>)) {
     if (view.hippyTag) {
         block(view);
-        
+
         for (id<HippyComponent> subview in view.hippySubviews) {
             HippyTraverseViewNodes(subview, block);
         }
     }
 }
 
-//static BOOL CGRectNotNAN(CGRect frame) {
-//    if (isnan(frame.origin.x) ||
-//        isnan(frame.origin.y) ||
-//        isnan(frame.size.width) ||
-//        isnan(frame.size.height)) {
-//        return NO;
-//    }
-//    return YES;
-//}
-
 const char *HippyUIManagerQueueName = "com.tencent.hippy.ShadowQueue";
-NSString *const HippyUIManagerWillUpdateViewsDueToContentSizeMultiplierChangeNotification = @"HippyUIManagerWillUpdateViewsDueToContentSizeMultiplierChangeNotification";
+NSString *const HippyUIManagerWillUpdateViewsDueToContentSizeMultiplierChangeNotification
+    = @"HippyUIManagerWillUpdateViewsDueToContentSizeMultiplierChangeNotification";
 NSString *const HippyUIManagerDidRegisterRootViewNotification = @"HippyUIManagerDidRegisterRootViewNotification";
 NSString *const HippyUIManagerDidRemoveRootViewNotification = @"HippyUIManagerDidRemoveRootViewNotification";
 NSString *const HippyUIManagerRootViewKey = @"HippyUIManagerRootViewKey";
+NSString *const HippyUIManagerDidEndBatchNotification = @"HippyUIManagerDidEndBatchNotification";
+NSString *const HippyFontChangeTriggerNotification = @"HippyFontChangeTriggerNotification";
 
 
-//not used function
-//static UIViewAnimationCurve _currentKeyboardAnimationCurve;
-
-//not used function
-//static UIViewAnimationOptions UIViewAnimationOptionsFromHippyAnimationType(HippyAnimationType type)
-//{
-//  switch (type) {
-//    case HippyAnimationTypeLinear:
-//      return UIViewAnimationOptionCurveLinear;
-//    case HippyAnimationTypeEaseIn:
-//      return UIViewAnimationOptionCurveEaseIn;
-//    case HippyAnimationTypeEaseOut:
-//      return UIViewAnimationOptionCurveEaseOut;
-//    case HippyAnimationTypeEaseInEaseOut:
-//      return UIViewAnimationOptionCurveEaseInOut;
-//    case HippyAnimationTypeKeyboard:
-//      // http://stackoverflow.com/questions/18870447/how-to-use-the-default-ios7-uianimation-curve
-//      return (UIViewAnimationOptions)(_currentKeyboardAnimationCurve << 16);
-//    default:
-//      HippyLogError(@"Unsupported animation type %zd", type);
-//      return UIViewAnimationOptionCurveEaseInOut;
-//  }
-//}
-
-@implementation HippyUIManager
-{
+@implementation HippyUIManager {
     // Root views are only mutated on the shadow queue
     NSMutableSet<NSNumber *> *_rootViewTags;
     NSMutableArray<HippyViewManagerUIBlock> *_pendingUIBlocks;
     NSMutableArray<HippyVirtualNodeManagerUIBlock> *_pendingVirtualNodeBlocks;
     NSMutableDictionary<NSNumber *, HippyVirtualNode *> *_nodeRegistry;
     NSMutableArray<NSNumber *> *_listTags;
-    NSMutableSet<UIView *> *_viewsToBeDeleted; // Main thread only
-    
-    NSMutableDictionary<NSNumber *, HippyShadowView *> *_shadowViewRegistry; // Hippy thread only
-    NSMutableDictionary<NSNumber *, UIView *> *_viewRegistry; // Main thread only
-    
+    NSMutableSet<UIView *> *_viewsToBeDeleted;  // Main thread only
+
+    NSMutableDictionary<NSNumber *, HippyShadowView *> *_shadowViewRegistry;  // Hippy thread only
+    NSMutableDictionary<NSNumber *, UIView *> *_viewRegistry;                 // Main thread only
+
     // Keyed by viewName
     NSDictionary *_componentDataByName;
-    
+
     NSMutableSet<id<HippyComponent>> *_bridgeTransactionListeners;
-#if !TARGET_OS_TV
-    UIInterfaceOrientation _currentInterfaceOrientation;
-#endif
-    
+
     NSMutableArray<HippyViewUpdateCompletedBlock> *_completeBlocks;
-    
+
     NSMutableSet<NSNumber *> *_listAnimatedViewTags;
 }
 
@@ -133,60 +102,87 @@ NSString *const HippyUIManagerRootViewKey = @"HippyUIManagerRootViewKey";
 
 HIPPY_EXPORT_MODULE()
 
-- (instancetype) init {
+- (instancetype)init {
     self = [super init];
     if (self) {
         _listAnimatedViewTags = [NSMutableSet set];
         NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
-        [center addObserver:self
-                   selector:@selector(didReceiveMemoryWarning)
-                       name:UIApplicationDidReceiveMemoryWarningNotification
-                     object:nil];
-        [center addObserver:self
-                   selector:@selector(appDidEnterBackground)
-                       name:UIApplicationDidEnterBackgroundNotification
-                     object:nil];
-        [center addObserver:self
-                   selector:@selector(appWillEnterForeground)
-                       name:UIApplicationWillEnterForegroundNotification
-                     object:nil];
+        [center addObserver:self selector:@selector(didReceiveMemoryWarning) name:UIApplicationDidReceiveMemoryWarningNotification object:nil];
+        [center addObserver:self selector:@selector(appDidEnterBackground) name:UIApplicationDidEnterBackgroundNotification object:nil];
+        [center addObserver:self selector:@selector(appWillEnterForeground) name:UIApplicationWillEnterForegroundNotification object:nil];
+        [center addObserver:self selector:@selector(onFontChangedFromNative:) name:HippyFontChangeTriggerNotification object:nil];
     }
     return self;
 }
 
-- (void)dealloc {
-}
+
+#pragma mark - Notification Handlers
 
 - (void)didReceiveMemoryWarning {
     for (UIView *view in [self->_viewRegistry allValues]) {
-        if ([view conformsToProtocol:@protocol(HippyMemoryOpt)]) {
-            [(id<HippyMemoryOpt>)view didReceiveMemoryWarning];
+        //https://github.com/apple-oss-distributions/objc4/blob/8701d5672d3fd3cd817aeb84db1077aafe1a1604/runtime/objc-runtime-new.mm#L7108
+        //[NSObject conformsToProtocol:] uses a global mutex_t runtimeLock to lock, which may case lag in main thread
+        if ([view respondsToSelector:@selector(didReceiveMemoryWarning)]) {
+            [view performSelector:@selector(didReceiveMemoryWarning)];
         }
     }
 }
+
 - (void)appDidEnterBackground {
     for (UIView *view in [self->_viewRegistry allValues]) {
-        if ([view conformsToProtocol:@protocol(HippyMemoryOpt)]) {
-            [(id<HippyMemoryOpt>)view appDidEnterBackground];
+        if ([view respondsToSelector:@selector(appDidEnterBackground)]) {
+            [view performSelector:@selector(appDidEnterBackground)];
         }
     }
 }
 - (void)appWillEnterForeground {
     for (UIView *view in [self->_viewRegistry allValues]) {
-        if ([view conformsToProtocol:@protocol(HippyMemoryOpt)]) {
-            [(id<HippyMemoryOpt>)view appWillEnterForeground];
+        if ([view respondsToSelector:@selector(appWillEnterForeground)]) {
+            [view performSelector:@selector(appWillEnterForeground)];
         }
     }
 }
 
-- (void)didReceiveNewContentSizeMultiplier
-{
+- (void)didReceiveNewContentSizeMultiplier {
     dispatch_async(HippyGetUIManagerQueue(), ^{
         [[NSNotificationCenter defaultCenter] postNotificationName:HippyUIManagerWillUpdateViewsDueToContentSizeMultiplierChangeNotification
                                                             object:self];
         [self setNeedsLayout];
     });
 }
+
+- (void)onFontChangedFromNative:(NSNotification *)notification {
+    NSNumber *targetRootTag = notification.object;
+    
+    __weak __typeof(self)weakSelf = self;
+    dispatch_async(HippyGetUIManagerQueue(), ^{
+        __strong __typeof(weakSelf)strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
+        if ((targetRootTag != nil) && ![strongSelf->_rootViewTags containsObject:targetRootTag]) {
+            // do compare if notification has target RootView.
+            return;
+        }
+        NSArray<HippyShadowView *> *shadowViews = strongSelf->_shadowViewRegistry.allValues;
+        Class shadowTextClass = [HippyShadowText class];
+        Class shadowTextViewClass = [HippyShadowTextView class];
+        for (HippyShadowView *shadowView in shadowViews) {
+            if ([shadowView isKindOfClass:shadowTextClass]) {
+                [shadowView dirtyText];
+                [shadowView dirtyPropagation];
+            } else if ([shadowView isKindOfClass:shadowTextViewClass]) {
+                [shadowView dirtyText];
+                [shadowView dirtyPropagation];
+                MTTNodeMarkDirty(shadowView.nodeRef);
+            }
+        }
+        [strongSelf setNeedsLayout];
+    });
+}
+
+
+#pragma mark -
 
 - (NSMutableArray *)completeBlocks {
     if (nil == _completeBlocks) {
@@ -195,65 +191,63 @@ HIPPY_EXPORT_MODULE()
     return _completeBlocks;
 }
 
-- (void)interfaceOrientationWillChange:(NSNotification *)notification
-{
-#if !TARGET_OS_TV
-    UIInterfaceOrientation nextOrientation =
-    (UIInterfaceOrientation)[notification.userInfo[UIApplicationStatusBarOrientationUserInfoKey] integerValue];
-    
-    // Update when we go from portrait to landscape, or landscape to portrait
-    if ((UIInterfaceOrientationIsPortrait(_currentInterfaceOrientation) &&
-         !UIInterfaceOrientationIsPortrait(nextOrientation)) ||
-        (UIInterfaceOrientationIsLandscape(_currentInterfaceOrientation) &&
-         !UIInterfaceOrientationIsLandscape(nextOrientation))) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-            [_bridge.eventDispatcher dispatchEvent: @"Dimensions" methodName: @"set" args: HippyExportedDimensions(YES)];
-#pragma clang diagnostic pop
-        }
-    
-    _currentInterfaceOrientation = nextOrientation;
-#endif
+
+#pragma mark - Module Life Cycle
+
+dispatch_queue_t HippyGetUIManagerQueue(void) {
+    static dispatch_queue_t shadowQueue;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0);
+        shadowQueue = dispatch_queue_create(HippyUIManagerQueueName, attr);
+    });
+    return shadowQueue;
 }
 
-- (void)invalidate
-{
+- (dispatch_queue_t)methodQueue {
+    return HippyGetUIManagerQueue();
+}
+
+- (void)invalidate {
     /**
      * Called on the JS Thread since all modules are invalidated on the JS thread
      */
-    
+
     // This only accessed from the shadow queue
     _pendingUIBlocks = nil;
     _pendingVirtualNodeBlocks = nil;
     _shadowViewRegistry = nil;
-    
+
+    NSSet<NSNumber *> *rootViewSet = [_rootViewTags copy];
+    self->_rootViewTags = nil;
     dispatch_async(dispatch_get_main_queue(), ^{
-        for (NSNumber *rootViewTag in self->_rootViewTags) {
+        for (NSNumber *rootViewTag in rootViewSet) {
             [(id<HippyInvalidating>)self->_viewRegistry[rootViewTag] invalidate];
-            [self->_viewRegistry removeObjectForKey: rootViewTag];
+            [self->_viewRegistry removeObjectForKey:rootViewTag];
         }
-        
+
         for (NSNumber *hippyTag in [self->_viewRegistry allKeys]) {
-            id <HippyComponent> subview = self->_viewRegistry[hippyTag];
+            id<HippyComponent> subview = self->_viewRegistry[hippyTag];
             if ([subview conformsToProtocol:@protocol(HippyInvalidating)]) {
                 [(id<HippyInvalidating>)subview invalidate];
             }
         }
-        
-        self->_rootViewTags = nil;
+
         self->_viewRegistry = nil;
         self->_bridgeTransactionListeners = nil;
         self->_bridge = nil;
         self->_listTags = nil;
         self->_nodeRegistry = nil;
-        
+
         [[NSNotificationCenter defaultCenter] removeObserver:self];
     });
     [_completeBlocks removeAllObjects];
 }
 
-- (NSMutableDictionary<NSNumber *, HippyShadowView *> *)shadowViewRegistry
-{
+
+#pragma mark - Accessors (To Delete)
+
+- (NSMutableDictionary<NSNumber *, HippyShadowView *> *)shadowViewRegistry {
     // NOTE: this method only exists so that it can be accessed by unit tests
     if (!_shadowViewRegistry) {
         _shadowViewRegistry = [NSMutableDictionary new];
@@ -261,8 +255,7 @@ HIPPY_EXPORT_MODULE()
     return _shadowViewRegistry;
 }
 
-- (NSMutableDictionary<NSNumber *, HippyVirtualNode *> *)virtualNodeRegistry
-{
+- (NSMutableDictionary<NSNumber *, HippyVirtualNode *> *)virtualNodeRegistry {
     // NOTE: this method only exists so that it can be accessed by unit tests
     if (!_nodeRegistry) {
         _nodeRegistry = [NSMutableDictionary new];
@@ -270,8 +263,7 @@ HIPPY_EXPORT_MODULE()
     return _nodeRegistry;
 }
 
-- (NSMutableDictionary<NSNumber *, UIView *> *)viewRegistry
-{
+- (NSMutableDictionary<NSNumber *, UIView *> *)viewRegistry {
     // NOTE: this method only exists so that it can be accessed by unit tests
     if (!_viewRegistry) {
         _viewRegistry = [NSMutableDictionary new];
@@ -279,120 +271,107 @@ HIPPY_EXPORT_MODULE()
     return _viewRegistry;
 }
 
-- (void)setBridge:(HippyBridge *)bridge
-{
+
+#pragma mark - Public Methods
+
+- (void)setBridge:(HippyBridge *)bridge {
     HippyAssert(_bridge == nil, @"Should not re-use same UIIManager instance");
-    
+
     _bridge = bridge;
-    
+
     _shadowViewRegistry = [NSMutableDictionary new];
     _viewRegistry = [NSMutableDictionary new];
-    
     _nodeRegistry = [NSMutableDictionary new];
+    
+    
     _pendingVirtualNodeBlocks = [NSMutableArray new];
     _listTags = [NSMutableArray new];
-    
+
     // Internal resources
     _pendingUIBlocks = [NSMutableArray new];
     _rootViewTags = [NSMutableSet new];
-    
+
     _bridgeTransactionListeners = [NSMutableSet new];
-    
+
     _viewsToBeDeleted = [NSMutableSet new];
-    
+
     // Get view managers from bridge
     NSMutableDictionary *componentDataByName = [NSMutableDictionary new];
     for (Class moduleClass in _bridge.moduleClasses) {
         if ([moduleClass isSubclassOfClass:[HippyViewManager class]]) {
-            HippyComponentData *componentData = [[HippyComponentData alloc] initWithManagerClass:moduleClass
-                                                                                      bridge:_bridge];
+            HippyComponentData *componentData = [[HippyComponentData alloc] initWithManagerClass:moduleClass bridge:_bridge];
             componentDataByName[componentData.name] = componentData;
         }
     }
-    
+
     _componentDataByName = [componentDataByName copy];
-    
-#if !TARGET_OS_TV
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(interfaceOrientationWillChange:)
-                                                 name:UIApplicationWillChangeStatusBarOrientationNotification
-                                               object:nil];
-#endif
 }
 
-dispatch_queue_t HippyGetUIManagerQueue(void)
-{
-    static dispatch_queue_t shadowQueue;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        if ([NSOperation instancesRespondToSelector:@selector(qualityOfService)]) {
-            dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0);
-            shadowQueue = dispatch_queue_create(HippyUIManagerQueueName, attr);
-        } else {
-            shadowQueue = dispatch_queue_create(HippyUIManagerQueueName, DISPATCH_QUEUE_SERIAL);
-            dispatch_set_target_queue(shadowQueue, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0));
-        }
-    });
-    return shadowQueue;
-}
-
-- (dispatch_queue_t)methodQueue
-{
-    return HippyGetUIManagerQueue();
-}
-
-- (void)registerRootView:(UIView *)rootView withSizeFlexibility:(HippyRootViewSizeFlexibility)sizeFlexibility
-{
+- (void)registerRootView:(UIView *)rootView withSizeFlexibility:(HippyRootViewSizeFlexibility)sizeFlexibility {
     HippyAssertMainQueue();
-    
+
     NSNumber *hippyTag = rootView.hippyTag;
-    HippyAssert(HippyIsHippyRootView(hippyTag),
-              @"View %@ with tag #%@ is not a root view", rootView, hippyTag);
-    
+    HippyAssert(HippyIsHippyRootView(hippyTag), @"View %@ with tag #%@ is not a root view", rootView, hippyTag);
+
 #if HIPPY_DEBUG
     UIView *existingView = _viewRegistry[hippyTag];
-    HippyAssert(existingView == nil || existingView == rootView,
-              @"Expect all root views to have unique tag. Added %@ twice", hippyTag);
+    HippyAssert(existingView == nil || existingView == rootView, @"Expect all root views to have unique tag. Added %@ twice", hippyTag);
 #endif
     // Register view
     _viewRegistry[hippyTag] = rootView;
-    
-    HippyVirtualNode *node = [HippyVirtualNode createNode: hippyTag viewName: @"HippyRootContentView" props: @{}];
+
+    HippyVirtualNode *node = [HippyVirtualNode createNode:hippyTag viewName:@"HippyRootContentView" props:@{}];
     _nodeRegistry[hippyTag] = node;
-    
+
     CGRect frame = rootView.frame;
-    
+
     // Register shadow view
+    UIColor *rootBgColor = rootView.backgroundColor;
+    NSString *rootViewName = NSStringFromClass([rootView class]);
+    __weak __typeof(self)weakSelf = self;
     dispatch_async(HippyGetUIManagerQueue(), ^{
-        if (!self->_viewRegistry) {
+        __strong __typeof(weakSelf)strongSelf = weakSelf;
+        if (!strongSelf || !strongSelf->_shadowViewRegistry) {
             return;
         }
-        
+
         HippyRootShadowView *shadowView = [HippyRootShadowView new];
         shadowView.hippyTag = hippyTag;
         shadowView.frame = frame;
-        shadowView.backgroundColor = rootView.backgroundColor;
-        shadowView.viewName = NSStringFromClass([rootView class]);
+        shadowView.backgroundColor = rootBgColor;
+        shadowView.viewName = rootViewName;
         shadowView.sizeFlexibility = sizeFlexibility;
-        self->_shadowViewRegistry[shadowView.hippyTag] = shadowView;
-        [self->_rootViewTags addObject:hippyTag];
+        strongSelf->_shadowViewRegistry[hippyTag] = shadowView;
+        [strongSelf->_rootViewTags addObject:hippyTag];
     });
-    
-    [[NSNotificationCenter defaultCenter] postNotificationName:HippyUIManagerDidRegisterRootViewNotification
-                                                        object:self
-                                                      userInfo:@{HippyUIManagerRootViewKey: rootView}];
+
+    [[NSNotificationCenter defaultCenter] postNotificationName:HippyUIManagerDidRegisterRootViewNotification object:self
+                                                      userInfo:@{ HippyUIManagerRootViewKey: rootView }];
 }
 
-- (UIView *)viewForHippyTag:(NSNumber *)hippyTag
-{
+
+#pragma mark -
+
+- (UIView *)viewForHippyTag:(NSNumber *)hippyTag {
     HippyAssertMainQueue();
     return _viewRegistry[hippyTag];
 }
 
-- (void)setFrame:(CGRect)frame forView:(UIView *)view
+- (HippyVirtualNode *)nodeForHippyTag:(NSNumber *)hippyTag
 {
     HippyAssertMainQueue();
-    
+    return _nodeRegistry[hippyTag];
+}
+
+- (HippyShadowView *)shadowViewForHippyTag:(NSNumber *)hippyTag {
+    HippyAssertThread(HippyGetUIManagerQueue(), @"should only be called from the HippyGetUIManagerQueue()");
+    return _shadowViewRegistry[hippyTag];
+}
+
+- (void)setFrame:(CGRect)frame fromOriginFrame:(CGRect)originFrame forView:(UIView *)view
+{
+    HippyAssertMainQueue();
+
     // The following variable has no meaning if the view is not a hippy root view
     HippyRootViewSizeFlexibility sizeFlexibility = HippyRootViewSizeFlexibilityNone;
     BOOL isRootView = NO;
@@ -401,27 +380,31 @@ dispatch_queue_t HippyGetUIManagerQueue(void)
         if (rootView != nil) {
             sizeFlexibility = rootView.sizeFlexibility;
             isRootView = YES;
+            NSDictionary *params = @{@"oldWidth": @(CGRectGetWidth(originFrame)), @"oldHeight": @(CGRectGetHeight(originFrame)),
+                                     @"width": @(CGRectGetWidth(frame)), @"height": @(CGRectGetHeight(frame))
+            };
+            NSDictionary *args = @{@"eventName": @"onSizeChanged", @"extra": params};
+            [[[self bridge] eventDispatcher] dispatchEvent:@"EventDispatcher" methodName:@"receiveNativeEvent" args:args];
         }
     }
-    
+
     NSNumber *hippyTag = view.hippyTag;
     dispatch_async(HippyGetUIManagerQueue(), ^{
         HippyShadowView *shadowView = self->_shadowViewRegistry[hippyTag];
-        
+
         if (shadowView == nil) {
             if (isRootView) {
-                assert(0); // todo: 走到这个逻辑不正常，请联系pennyli
+                HippyAssert(NO, @"should not be null");
             }
-            HippyLogInfo(@"Could not locate shadow view with tag #%@, this is probably caused by a temporary inconsistency between native views and shadow views.", hippyTag);
             return;
         }
-        
+
         BOOL needsLayout = NO;
         if (!CGRectEqualToRect(frame, shadowView.frame)) {
             shadowView.frame = frame;
             needsLayout = YES;
         }
-        
+
         // Trigger re-layout when size flexibility changes, as the root view might grow or
         // shrink in the flexible dimensions.
         if (HippyIsHippyRootView(hippyTag)) {
@@ -431,53 +414,31 @@ dispatch_queue_t HippyGetUIManagerQueue(void)
                 needsLayout = YES;
             }
         }
-        
+
         if (needsLayout) {
-            [self setNeedsLayout: hippyTag];
+            [self setNeedsLayout:hippyTag];
         }
     });
 }
 
-- (void)setIntrinsicContentSize:(CGSize)size forView:(UIView *)view
-{
+- (void)setIntrinsicContentSize:(CGSize)size forView:(UIView *)view {
     HippyAssertMainQueue();
-    
+
     NSNumber *hippyTag = view.hippyTag;
     dispatch_async(HippyGetUIManagerQueue(), ^{
         HippyShadowView *shadowView = self->_shadowViewRegistry[hippyTag];
         HippyAssert(shadowView != nil, @"Could not locate root view with tag #%@", hippyTag);
-        
+
         shadowView.intrinsicContentSize = size;
-        
+
         [self setNeedsLayout];
     });
-}
-
-- (void)setBackgroundColor:(UIColor *)color forView:(UIView *)view
-{
-    HippyAssertMainQueue();
-    
-    //  NSNumber *hippyTag = view.hippyTag;
-    //  dispatch_async(HippyGetUIManagerQueue(), ^{
-    //    if (!self->_viewRegistry) {
-    //      return;
-    //    }
-    //
-    //    HippyShadowView *shadowView = self->_shadowViewRegistry[hippyTag];
-    //    HippyAssert(shadowView != nil, @"Could not locate root view with tag #%@", hippyTag);
-    //    shadowView.backgroundColor = color;
-    //    [self _amendPendingUIBlocksWithStylePropagationUpdateForShadowView:shadowView];
-    //    [self flushVirtualNodeBlocks];
-    //    [self flushUIBlocks];
-    //  });
 }
 
 /**
  * Unregisters views from registries
  */
-- (void)_purgeChildren:(NSArray<id<HippyComponent>> *)children
-          fromRegistry:(NSMutableDictionary<NSNumber *, id<HippyComponent>> *)registry
-{
+- (void)_purgeChildren:(NSArray<id<HippyComponent>> *)children fromRegistry:(NSMutableDictionary<NSNumber *, id<HippyComponent>> *)registry {
     for (id<HippyComponent> child in children) {
         HippyTraverseViewNodes(registry[child.hippyTag], ^(id<HippyComponent> subview) {
             HippyAssert(![subview isHippyRootView], @"Root views should not be unregistered");
@@ -485,17 +446,17 @@ dispatch_queue_t HippyGetUIManagerQueue(void)
                 [(id<HippyInvalidating>)subview invalidate];
             }
             [registry removeObjectForKey:subview.hippyTag];
-            
+
             if (registry == (NSMutableDictionary<NSNumber *, id<HippyComponent>> *)self->_viewRegistry) {
                 [self->_bridgeTransactionListeners removeObject:subview];
             }
-            
+
             // 如果是list virtual node节点，则在UI线程删除list上的视图节点
             if (registry == (NSMutableDictionary<NSNumber *, id<HippyComponent>> *)self->_nodeRegistry) {
-                if ([self->_listTags containsObject: subview.hippyTag]) {
+                if ([self->_listTags containsObject:subview.hippyTag]) {
                     [self->_listTags removeObject:subview.hippyTag];
                     for (id<HippyComponent> node in subview.hippySubviews) {
-                        [self removeNativeNode: (HippyVirtualNode *)node];
+                        [self removeNativeNode:(HippyVirtualNode *)node];
                     }
                 }
             }
@@ -503,34 +464,29 @@ dispatch_queue_t HippyGetUIManagerQueue(void)
     }
 }
 
-- (void)addUIBlock:(HippyViewManagerUIBlock)block
-{
-    HippyAssertThread(HippyGetUIManagerQueue(),
-                    @"-[HippyUIManager addUIBlock:] should only be called from the "
-                    "UIManager's queue (get this using `HippyGetUIManagerQueue()`)");
-    
+- (void)addUIBlock:(HippyViewManagerUIBlock)block {
+    HippyAssertThread(HippyGetUIManagerQueue(), @"-[HippyUIManager addUIBlock:] should only be called from the "
+                                                 "UIManager's queue (get this using `HippyGetUIManagerQueue()`)");
+
     if (!block || !_viewRegistry) {
         return;
     }
-    
+
     [_pendingUIBlocks addObject:block];
 }
 
-- (void)addVirtulNodeBlock:(HippyVirtualNodeManagerUIBlock)block
-{
-    HippyAssertThread(HippyGetUIManagerQueue(),
-                    @"-[HippyUIManager addVirtulNodeBlock:] should only be called from the "
-                    "UIManager's queue (get this using `HippyGetUIManagerQueue()`)");
-    
+- (void)addVirtulNodeBlock:(HippyVirtualNodeManagerUIBlock)block {
+    HippyAssertThread(HippyGetUIManagerQueue(), @"-[HippyUIManager addVirtulNodeBlock:] should only be called from the "
+                                                 "UIManager's queue (get this using `HippyGetUIManagerQueue()`)");
+
     if (!block || !_nodeRegistry) {
         return;
     }
-    
+
     [_pendingVirtualNodeBlocks addObject:block];
 }
 
-- (void)executeBlockOnUIManagerQueue:(dispatch_block_t)block
-{
+- (void)executeBlockOnUIManagerQueue:(dispatch_block_t)block {
     dispatch_async(HippyGetUIManagerQueue(), ^{
         if (block) {
             block();
@@ -538,22 +494,21 @@ dispatch_queue_t HippyGetUIManagerQueue(void)
     });
 }
 
-- (HippyViewManagerUIBlock)uiBlockWithLayoutUpdateForRootView:(HippyRootShadowView *)rootShadowView
-{
+- (HippyViewManagerUIBlock)uiBlockWithLayoutUpdateForRootView:(HippyRootShadowView *)rootShadowView {
     HippyAssert(!HippyIsMainQueue(), @"Should be called on shadow queue");
-    
+
     // This is nuanced. In the JS thread, we create a new update buffer
     // `frameTags`/`frames` that is created/mutated in the JS thread. We access
     // these structures in the UI-thread block. `NSMutableArray` is not thread
     // safe so we rely on the fact that we never mutate it after it's passed to
     // the main thread.
     NSSet<HippyShadowView *> *viewsWithNewFrames = [rootShadowView collectViewsWithUpdatedFrames];
-    
+
     if (!viewsWithNewFrames.count) {
         // no frame change results in no UI update block
         return nil;
     }
-    
+
     typedef struct {
         CGRect frame;
         BOOL isNew;
@@ -561,7 +516,7 @@ dispatch_queue_t HippyGetUIManagerQueue(void)
         BOOL isHidden;
         BOOL animated;
     } HippyFrameData;
-    
+
     // Construct arrays then hand off to main thread
     NSUInteger count = viewsWithNewFrames.count;
     NSMutableArray *hippyTags = [[NSMutableArray alloc] initWithCapacity:count];
@@ -571,59 +526,52 @@ dispatch_queue_t HippyGetUIManagerQueue(void)
         HippyFrameData *frameDataArray = (HippyFrameData *)framesData.mutableBytes;
         for (HippyShadowView *shadowView in viewsWithNewFrames) {
             hippyTags[index] = shadowView.hippyTag;
-            frameDataArray[index++] = (HippyFrameData){
-                shadowView.frame,
-                shadowView.isNewView,
-                shadowView.superview.isNewView,
-                shadowView.isHidden,
-                shadowView.animated
-            };
+            frameDataArray[index++] = (HippyFrameData) { shadowView.frame, shadowView.isNewView, shadowView.superview.isNewView, shadowView.isHidden,
+                shadowView.animated };
         }
     }
-    
+
     // These are blocks to be executed on each view, immediately after
     // hippySetFrame: has been called. Note that if hippySetFrame: is not called,
     // these won't be called either, so this is not a suitable place to update
     // properties that aren't related to layout.
-    NSMutableDictionary<NSNumber *, HippyViewManagerUIBlock> *updateBlocks =
-    [NSMutableDictionary new];
+    NSMutableDictionary<NSNumber *, HippyViewManagerUIBlock> *updateBlocks = [NSMutableDictionary new];
     for (HippyShadowView *shadowView in viewsWithNewFrames) {
-        
         // We have to do this after we build the parentsAreNew array.
         shadowView.newView = NO;
-        
+
         NSNumber *hippyTag = shadowView.hippyTag;
         HippyViewManager *manager = [_componentDataByName[shadowView.viewName] manager];
         HippyViewManagerUIBlock block = [manager uiBlockToAmendWithShadowView:shadowView];
         if (block) {
             updateBlocks[hippyTag] = block;
         }
-        
+
         if (shadowView.onLayout) {
             CGRect frame = shadowView.frame;
             shadowView.onLayout(@{
-                                  @"layout": @{
-                                          @"x": @(frame.origin.x),
-                                          @"y": @(frame.origin.y),
-                                          @"width": @(frame.size.width),
-                                          @"height": @(frame.size.height),
-                                          },
-                                  });
+                @"layout": @ {
+                    @"x": @(frame.origin.x),
+                    @"y": @(frame.origin.y),
+                    @"width": @(frame.size.width),
+                    @"height": @(frame.size.height),
+                },
+            });
         }
-        
+
         if (HippyIsHippyRootView(hippyTag)) {
             CGSize contentSize = shadowView.frame.size;
-            
+
             dispatch_async(dispatch_get_main_queue(), ^{
                 UIView *view = self->_viewRegistry[hippyTag];
                 HippyAssert(view != nil, @"view (for ID %@) not found", hippyTag);
-                
+
                 HippyRootView *rootView = (HippyRootView *)[view superview];
                 rootView.intrinsicSize = contentSize;
             });
         }
     }
-    
+
     [self addVirtulNodeBlock:^(__unused HippyUIManager *uiManager, NSDictionary *virtualNodeRegistry) {
         NSInteger index = 0;
         HippyFrameData *frameDataArray = (HippyFrameData *)framesData.mutableBytes;
@@ -631,34 +579,33 @@ dispatch_queue_t HippyGetUIManagerQueue(void)
             HippyVirtualNode *node = virtualNodeRegistry[hippyTag];
             if (node) {
                 HippyFrameData frameData = frameDataArray[index];
-                [node hippySetFrame: frameData.frame];
+                [node hippySetFrame:frameData.frame];
             }
             index++;
         }
     }];
-    
+
     // Perform layout (possibly animated)
     return ^(__unused HippyUIManager *uiManager, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
-        
         const HippyFrameData *frameDataArray = (const HippyFrameData *)framesData.bytes;
-        __block NSUInteger completionsCalled = 0;
-        
+        __block NSUInteger completionsCalled = 0; // TODO: ?
+
         NSInteger index = 0;
         for (NSNumber *hippyTag in hippyTags) {
             HippyFrameData frameData = frameDataArray[index++];
-            
+
             UIView *view = viewRegistry[hippyTag];
             CGRect frame = frameData.frame;
-            
+
             BOOL isHidden = frameData.isHidden;
             void (^completion)(BOOL) = ^(__unused BOOL finished) {
                 completionsCalled++;
             };
-            
+
             if (view.isHidden != isHidden) {
                 view.hidden = isHidden;
             }
-            
+
             HippyViewManagerUIBlock updateBlock = updateBlocks[hippyTag];
             [view hippySetFrame:frame];
             if (frameData.animated) {
@@ -672,24 +619,22 @@ dispatch_queue_t HippyGetUIManagerQueue(void)
             }
             completion(YES);
         }
-        
     };
 }
 
-- (void)_amendPendingUIBlocksWithStylePropagationUpdateForShadowView:(HippyShadowView *)topView
-{
+- (void)_amendPendingUIBlocksWithStylePropagationUpdateForShadowView:(HippyShadowView *)topView {
     NSMutableSet<HippyApplierBlock> *applierBlocks = [NSMutableSet setWithCapacity:1];
-    
+
     NSMutableSet<HippyApplierVirtualBlock> *virtualApplierBlocks = [NSMutableSet setWithCapacity:1];
-    [topView collectUpdatedProperties:applierBlocks virtualApplierBlocks: virtualApplierBlocks parentProperties:@{}];
+    [topView collectUpdatedProperties:applierBlocks virtualApplierBlocks:virtualApplierBlocks parentProperties:@{}];
     if (applierBlocks.count) {
         [self addUIBlock:^(__unused HippyUIManager *uiManager, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
             for (HippyApplierBlock block in applierBlocks) {
                 block(viewRegistry);
             }
         }];
-        
-        [self addVirtulNodeBlock:^(__unused HippyUIManager *uiManager, NSDictionary<NSNumber *,HippyVirtualNode *> *virtualNodeRegistry) {
+
+        [self addVirtulNodeBlock:^(__unused HippyUIManager *uiManager, NSDictionary<NSNumber *, HippyVirtualNode *> *virtualNodeRegistry) {
             for (HippyApplierVirtualBlock block in virtualApplierBlocks) {
                 block(virtualNodeRegistry);
             }
@@ -701,8 +646,7 @@ dispatch_queue_t HippyGetUIManagerQueue(void)
  * A method to be called from JS, which takes a container ID and then releases
  * all subviews for that container upon receipt.
  */
-HIPPY_EXPORT_METHOD(removeSubviewsFromContainerWithID:(nonnull NSNumber *)containerID)
-{
+HIPPY_EXPORT_METHOD(removeSubviewsFromContainerWithID:(nonnull NSNumber *)containerID) {
     id<HippyComponent> container = _shadowViewRegistry[containerID];
     HippyAssert(container != nil, @"container view (for ID %@) not found", containerID);
     
@@ -726,9 +670,7 @@ HIPPY_EXPORT_METHOD(removeSubviewsFromContainerWithID:(nonnull NSNumber *)contai
  *
  * @returns Array of removed items.
  */
-- (NSArray<id<HippyComponent>> *)_childrenToRemoveFromContainer:(id<HippyComponent>)container
-                                                    atIndices:(NSArray<NSNumber *> *)atIndices
-{
+- (NSArray<id<HippyComponent>> *)_childrenToRemoveFromContainer:(id<HippyComponent>)container atIndices:(NSArray<NSNumber *> *)atIndices {
     // If there are no indices to move or the container has no subviews don't bother
     // We support parents with nil subviews so long as they're all nil so this allows for this behavior
     if (atIndices.count == 0 || [container hippySubviews].count == 0) {
@@ -743,7 +685,7 @@ HIPPY_EXPORT_METHOD(removeSubviewsFromContainerWithID:(nonnull NSNumber *)contai
             [removedChildren addObject:[container hippySubviews][index]];
         }
     }
-    
+
     // FIXME: The fatal prompt caused to feeds running in QB got redbox alert in DEBUG mode.
     //        Commented theses code temporary.
     /*
@@ -757,16 +699,13 @@ HIPPY_EXPORT_METHOD(removeSubviewsFromContainerWithID:(nonnull NSNumber *)contai
     return removedChildren;
 }
 
-- (void)_removeChildren:(NSArray<id<HippyComponent>> *)children
-          fromContainer:(id<HippyComponent>)container
-{
+- (void)_removeChildren:(NSArray<id<HippyComponent>> *)children fromContainer:(id<HippyComponent>)container {
     for (id<HippyComponent> removedChild in children) {
         [container removeHippySubview:removedChild];
     }
 }
 
-HIPPY_EXPORT_METHOD(removeRootView:(nonnull NSNumber *)rootHippyTag)
-{
+HIPPY_EXPORT_METHOD(removeRootView:(nonnull NSNumber *)rootHippyTag) {
     HippyShadowView *rootShadowView = _shadowViewRegistry[rootHippyTag];
     HippyAssert(rootShadowView.superview == nil, @"root view cannot have superview (ID %@)", rootHippyTag);
     [self _purgeChildren:(NSArray<id<HippyComponent>> *)rootShadowView.hippySubviews
@@ -785,18 +724,19 @@ HIPPY_EXPORT_METHOD(removeRootView:(nonnull NSNumber *)rootHippyTag)
     [self addUIBlock:^(HippyUIManager *uiManager, NSDictionary<NSNumber *, UIView *> *viewRegistry){
         HippyAssertMainQueue();
         UIView *rootView = viewRegistry[rootHippyTag];
-        [uiManager _purgeChildren:(NSArray<id<HippyComponent>> *)rootView.hippySubviews
-                     fromRegistry:(NSMutableDictionary<NSNumber *, id<HippyComponent>> *)viewRegistry];
-        [(NSMutableDictionary *)viewRegistry removeObjectForKey:rootHippyTag];
-        [[NSNotificationCenter defaultCenter] postNotificationName:HippyUIManagerDidRemoveRootViewNotification
-                                                            object:uiManager
-                                                          userInfo:@{HippyUIManagerRootViewKey: rootView}];
+        if (rootView) {
+            [uiManager _purgeChildren:(NSArray<id<HippyComponent>> *)rootView.hippySubviews
+                         fromRegistry:(NSMutableDictionary<NSNumber *, id<HippyComponent>> *)viewRegistry];
+            [(NSMutableDictionary *)viewRegistry removeObjectForKey:rootHippyTag];
+            [[NSNotificationCenter defaultCenter] postNotificationName:HippyUIManagerDidRemoveRootViewNotification
+                                                                object:uiManager
+                                                              userInfo:@{HippyUIManagerRootViewKey: rootView}];
+        }
     }];
 }
 
 HIPPY_EXPORT_METHOD(replaceExistingNonRootView:(nonnull NSNumber *)hippyTag
-                  withView:(nonnull NSNumber *)newHippyTag)
-{
+                  withView:(nonnull NSNumber *)newHippyTag) {
     HippyShadowView *shadowView = _shadowViewRegistry[hippyTag];
     HippyAssert(shadowView != nil, @"shadowView (for ID %@) not found", hippyTag);
     
@@ -816,8 +756,7 @@ HIPPY_EXPORT_METHOD(replaceExistingNonRootView:(nonnull NSNumber *)hippyTag
 }
 
 HIPPY_EXPORT_METHOD(setChildren:(nonnull NSNumber *)containerTag
-                  hippyTags:(NSArray<NSNumber *> *)hippyTags)
-{
+                  hippyTags:(NSArray<NSNumber *> *)hippyTags) {
     HippySetChildren(containerTag, hippyTags,
                    (NSDictionary<NSNumber *, id<HippyComponent>> *)_shadowViewRegistry);
     
@@ -832,43 +771,38 @@ HIPPY_EXPORT_METHOD(setChildren:(nonnull NSNumber *)containerTag
     }];
 }
 
-static void HippySetVirtualChildren(NSNumber *containerTag,
-                                  NSArray<NSNumber *> *hippyTags,
-                                  NSDictionary<NSNumber *, HippyVirtualNode *> *virtualNodeRegistry)
-{
-    HippyVirtualNode * container = virtualNodeRegistry[containerTag];
+static void HippySetVirtualChildren(
+    NSNumber *containerTag, NSArray<NSNumber *> *hippyTags, NSDictionary<NSNumber *, HippyVirtualNode *> *virtualNodeRegistry) {
+    HippyVirtualNode *container = virtualNodeRegistry[containerTag];
     if (container) {
         for (NSNumber *hippyTag in hippyTags) {
-            HippyVirtualNode* node = virtualNodeRegistry[hippyTag];
+            HippyVirtualNode *node = virtualNodeRegistry[hippyTag];
             if (node) {
                 node.parent = container;
-                [container insertHippySubview: node atIndex: container.subNodes.count];
+                [container insertHippySubview:node atIndex:container.subNodes.count];
             }
         }
     }
 }
 
-static void HippySetChildren(NSNumber *containerTag,
-                           NSArray<NSNumber *> *hippyTags,
-                           NSDictionary<NSNumber *, id<HippyComponent>> *registry)
-{
-    
-    
+static void HippySetChildren(NSNumber *containerTag, NSArray<NSNumber *> *hippyTags, NSDictionary<NSNumber *, id<HippyComponent>> *registry) {
     id<HippyComponent> container = registry[containerTag];
     for (NSNumber *hippyTag in hippyTags) {
         id<HippyComponent> view = registry[hippyTag];
         if (view) {
-            [container insertHippySubview:view atIndex: container.hippySubviews.count];
+            [container insertHippySubview:view atIndex:container.hippySubviews.count];
         }
     }
 }
 
-HIPPY_EXPORT_METHOD(startBatch:(__unused NSString *)batchID) {
+HIPPY_EXPORT_METHOD(startBatch) {
 }
 
-HIPPY_EXPORT_METHOD(endBatch:(__unused NSString *)batchID) {
+HIPPY_EXPORT_METHOD(endBatch) {
     if (_pendingUIBlocks.count) {
         [self batchDidComplete];
+        [[NSNotificationCenter defaultCenter] postNotificationName:HippyUIManagerDidEndBatchNotification
+                                                            object:self];
     }
 }
 
@@ -877,8 +811,7 @@ HIPPY_EXPORT_METHOD(manageChildren:(nonnull NSNumber *)containerTag
                   moveToIndices:(NSArray<NSNumber *> *)moveToIndices
                   addChildHippyTags:(NSArray<NSNumber *> *)addChildHippyTags
                   addAtIndices:(NSArray<NSNumber *> *)addAtIndices
-                  removeAtIndices:(NSArray<NSNumber *> *)removeAtIndices)
-{
+                  removeAtIndices:(NSArray<NSNumber *> *)removeAtIndices) {
     [self _manageChildren:containerTag
           moveFromIndices:moveFromIndices
             moveToIndices:moveToIndices
@@ -915,23 +848,21 @@ HIPPY_EXPORT_METHOD(manageChildren:(nonnull NSNumber *)containerTag
       addChildHippyTags:(NSArray<NSNumber *> *)addChildHippyTags
            addAtIndices:(NSArray<NSNumber *> *)addAtIndices
         removeAtIndices:(NSArray<NSNumber *> *)removeAtIndices
-               registry:(NSMutableDictionary<NSNumber *, id<HippyComponent>> *)registry
-{
+               registry:(NSMutableDictionary<NSNumber *, id<HippyComponent>> *)registry {
     id<HippyComponent> container = registry[containerTag];
-    HippyAssert(moveFromIndices.count == moveToIndices.count, @"moveFromIndices had size %tu, moveToIndices had size %tu", moveFromIndices.count, moveToIndices.count);
+    HippyAssert(moveFromIndices.count == moveToIndices.count, @"moveFromIndices had size %tu, moveToIndices had size %tu", moveFromIndices.count,
+        moveToIndices.count);
     HippyAssert(addChildHippyTags.count == addAtIndices.count, @"there should be at least one Hippy child to add");
-    
+
     // Removes (both permanent and temporary moves) are using "before" indices
-    NSArray<id<HippyComponent>> *permanentlyRemovedChildren =
-    [self _childrenToRemoveFromContainer:container atIndices:removeAtIndices];
-    NSArray<id<HippyComponent>> *temporarilyRemovedChildren =
-    [self _childrenToRemoveFromContainer:container atIndices:moveFromIndices];
+    NSArray<id<HippyComponent>> *permanentlyRemovedChildren = [self _childrenToRemoveFromContainer:container atIndices:removeAtIndices];
+    NSArray<id<HippyComponent>> *temporarilyRemovedChildren = [self _childrenToRemoveFromContainer:container atIndices:moveFromIndices];
     BOOL isUIViewRegistry = registry == (NSMutableDictionary<NSNumber *, id<HippyComponent>> *)_viewRegistry;
     [self _removeChildren:permanentlyRemovedChildren fromContainer:container];
-    
+
     [self _removeChildren:temporarilyRemovedChildren fromContainer:container];
     [self _purgeChildren:permanentlyRemovedChildren fromRegistry:registry];
-    
+
     // Figure out what to insert - merge temporary inserts and adds
     NSMutableDictionary *destinationsToChildrenToAdd = [NSMutableDictionary dictionary];
     for (NSInteger index = 0, length = temporarilyRemovedChildren.count; index < length; index++) {
@@ -943,16 +874,15 @@ HIPPY_EXPORT_METHOD(manageChildren:(nonnull NSNumber *)containerTag
             destinationsToChildrenToAdd[addAtIndices[index]] = view;
         }
     }
-    
+
     if (!isUIViewRegistry) {
         isUIViewRegistry = ((id)registry == (id)_nodeRegistry);
     }
-    
-    NSArray<NSNumber *> *sortedIndices =
-    [destinationsToChildrenToAdd.allKeys sortedArrayUsingSelector:@selector(compare:)];
+
+    NSArray<NSNumber *> *sortedIndices = [destinationsToChildrenToAdd.allKeys sortedArrayUsingSelector:@selector(compare:)];
     for (NSNumber *hippyIndex in sortedIndices) {
         NSInteger insertAtIndex = hippyIndex.integerValue;
-        
+
         // When performing a delete animation, views are not removed immediately
         // from their container so we need to offset the insertion index if a view
         // that will be removed appears earlier than the view we are inserting.
@@ -964,33 +894,30 @@ HIPPY_EXPORT_METHOD(manageChildren:(nonnull NSNumber *)containerTag
                 }
             }
         }
-        
+
         if (((id)registry == (id)_nodeRegistry)) {
-            HippyVirtualNode*node = destinationsToChildrenToAdd[hippyIndex];
+            HippyVirtualNode *node = destinationsToChildrenToAdd[hippyIndex];
             node.parent = container;
         }
-        
-        [container insertHippySubview:destinationsToChildrenToAdd[hippyIndex]
-                              atIndex:insertAtIndex];
+
+        [container insertHippySubview:destinationsToChildrenToAdd[hippyIndex] atIndex:insertAtIndex];
     }
 }
 
 HIPPY_EXPORT_METHOD(createView:(nonnull NSNumber *)hippyTag
                   viewName:(NSString *)viewName
-                  rootTag:(__unused NSNumber *)rootTag
-                  props:(NSDictionary *)props)
-{
+                  rootTag:(nonnull NSNumber *)rootTag
+                  tagName:(NSString *)tagName
+                  props:(NSDictionary *)props) {
     HippyComponentData *componentData = _componentDataByName[viewName];
     HippyShadowView *shadowView = [componentData createShadowViewWithTag:hippyTag];
     if (componentData == nil) {
         HippyLogError(@"No component found for view with name \"%@\"", viewName);
     }
     id isAnimated = props[@"useAnimation"];
-    //这里的view props不仅有useAnimation，而且在某层还有animationId
-    //通过animationId与AnimationModule的createModule的animation绑定在一起
     if (isAnimated && [isAnimated isKindOfClass: [NSNumber class]]) {
-        HippyExtAnimationModule *animationModule = self.bridge.animationModule;
-        props = [animationModule bindAnimaiton:props viewTag: hippyTag rootTag: rootTag];
+        HippyNextAnimationModule *animationModule = self.bridge.animationModule;
+        props = [animationModule bindAnimaiton:props viewTag:hippyTag rootTag:rootTag];
         shadowView.animated = [(NSNumber *)isAnimated boolValue];;
     } else {
         shadowView.animated = NO;
@@ -1002,9 +929,10 @@ HIPPY_EXPORT_METHOD(createView:(nonnull NSNumber *)hippyTag
     // Register shadow view
     if (shadowView) {
         shadowView.hippyTag = hippyTag;
-        shadowView.viewName = viewName;
-        shadowView.props = props;
         shadowView.rootTag = rootTag;
+        shadowView.bridge = self.bridge;
+        shadowView.viewName = viewName;
+        shadowView.props = newProps;
         [componentData setProps:newProps forShadowView:shadowView];
         _shadowViewRegistry[hippyTag] = shadowView;
     }
@@ -1020,78 +948,148 @@ HIPPY_EXPORT_METHOD(createView:(nonnull NSNumber *)hippyTag
         
         HippyVirtualNode *node = uiManager->_nodeRegistry[hippyTag];
         
-        if ([node isListSubNode] && [node cellNode] && !viewRegistry[[[node cellNode] hippyTag]]) {
-            return ;
-        }
-        
-        UIView *view = [componentData createViewWithTag:hippyTag initProps: newProps];
-        if (view) {
-            view.viewName = viewName;
-            [componentData setProps:props forView:view]; // Must be done before bgColor to prevent wrong default
-            
-            if ([view respondsToSelector:@selector(hippyBridgeDidFinishTransaction)]) {
-                [uiManager->_bridgeTransactionListeners addObject:view];
-            }
-            uiManager->_viewRegistry[hippyTag] = view;
-        }
-        
-        if ([node isKindOfClass:[HippyVirtualList class]]) {
-            if ([view conformsToProtocol: @protocol(HippyBaseListViewProtocol)]) {
-                id <HippyBaseListViewProtocol> listview = (id<HippyBaseListViewProtocol>)view;
-                listview.node = (HippyVirtualList *)node;
-                [uiManager->_listTags addObject:hippyTag];
+        if ([node createViewLazily]) {
+            HippyVirtualNode *firstLazilyLoadTypeParentNode = [node firstLazilyLoadTypeParentNode];
+            NSNumber *tag = [firstLazilyLoadTypeParentNode hippyTag];
+            UIView *view = viewRegistry[tag];
+            if (nil == view) {
+                return;
             }
         }
+        
+#if HIPPY_DEV
+        UIView *view = [uiManager createViewByComponentData:componentData
+                                           hippyVirtualNode:node
+                                                   hippyTag:hippyTag
+                                                 properties:newProps
+                                                   viewName:viewName];
+
+        view._DEBUG_hippyShadowView = shadowView;
+#else
+        UIView *view = [uiManager createViewByComponentData:componentData
+                                           hippyVirtualNode:node
+                                                   hippyTag:hippyTag
+                                                 properties:newProps
+                                                   viewName:viewName];
+#endif /* HIPPY_DEV */
     }];
     
     [self addVirtulNodeBlock:^(HippyUIManager *uiManager, __unused NSDictionary<NSNumber *,HippyVirtualNode *> *virtualNodeRegistry) {
         HippyVirtualNode *node = [componentData createVirtualNode: hippyTag props: newProps];
         if(node) {
             node.rootTag = rootTag;
+            node.tagName = tagName;
+            node.bridge = [uiManager bridge];
             uiManager->_nodeRegistry[hippyTag] = node;
         }
     }];
 }
 
-- (void) updateViewsFromParams:(NSArray<HippyExtAnimationViewParams *> *)params completion:(HippyViewUpdateCompletedBlock)block{
+- (UIView *)createViewByComponentData:(HippyComponentData *)componentData
+                     hippyVirtualNode:(HippyVirtualNode *)node
+                             hippyTag:(NSNumber *)hippyTag
+                           properties:(NSDictionary *)props
+                             viewName:(NSString *)viewName {
+    UIView *view = [self viewForHippyTag:hippyTag];
+    
+    BOOL canBeRetrievedFromCache = YES;
+    if (view && [view respondsToSelector:@selector(canBeRetrievedFromViewCache)]) {
+        canBeRetrievedFromCache = [view canBeRetrievedFromViewCache];
+    }
+
+    /**
+     * subviews & hippySubviews should be removed from the view which we get from cache(_viewRegistry).
+     * otherwise hippySubviews will be inserted multiple times.
+     */
+    if (view && canBeRetrievedFromCache) {
+        [view resetHippySubviews];
+    }
+    else {
+        view = [componentData createViewWithTag:hippyTag initProps:props];
+    }
+    if (view) {
+        view.viewName = viewName;
+        view.rootTag = node.rootTag;
+        [componentData setProps:props forView:view];  // Must be done before bgColor to prevent wrong default
+
+        if ([view respondsToSelector:@selector(hippyBridgeDidFinishTransaction)]) {
+            [self->_bridgeTransactionListeners addObject:view];
+        }
+        self->_viewRegistry[hippyTag] = view;
+    }
+
+    if ([node isKindOfClass:[HippyVirtualList class]]) {
+        if ([view conformsToProtocol:@protocol(HippyBaseListViewProtocol)]) {
+            id<HippyBaseListViewProtocol> listview = (id<HippyBaseListViewProtocol>)view;
+            listview.node = (HippyVirtualList *)node;
+            [self->_listTags addObject:hippyTag];
+        }
+        // Lazy loading list needs to be layout
+        dispatch_async(HippyGetUIManagerQueue(), ^{
+            [self setNeedsLayout:hippyTag];
+        });
+    }
+    return view;
+}
+
+- (void)updateViewsFromParams:(NSArray<HippyNextAnimationViewParams *> *)params completion:(HippyViewUpdateCompletedBlock)block {
     NSMutableSet *rootTags = [NSMutableSet set];
-    for (HippyExtAnimationViewParams *param in params) {
-        //rdm上报param.rootTag有nil的可能
+    for (HippyNextAnimationViewParams *param in params) {
         if (param.rootTag) {
-            [rootTags addObject: param.rootTag];
+            [rootTags addObject:param.rootTag];
         } else {
-            HippyAssert(NO, @"param.rootTag不应该为nil，保留现场，找mengyanluo");
+            HippyAssert(NO, @"param.rootTag should not be nil");
         }
         [self updateView:param.hippyTag viewName:nil props:param.updateParams];
         if (block) {
             [[self completeBlocks] addObject:block];
         }
     }
-    
+
     for (NSNumber *rootTag in rootTags) {
-        [self _layoutAndMount: rootTag];
+        [self _layoutAndMount:rootTag];
     }
+}
+
+- (void)updateViewWithHippyTag:(NSNumber *)hippyTag props:(NSDictionary *)pros {
+    [self updateView:hippyTag viewName:nil props:pros];
+    [self batchDidComplete];
+}
+
+- (void)updateViewFromAnimationWithHippyTag:(NSNumber *)hippyTag props:(NSDictionary *)props {
+    HippyShadowView *shadowView = _shadowViewRegistry[hippyTag];
+    HippyComponentData *componentData = _componentDataByName[shadowView.viewName];
+    
+    [componentData setProps:props forShadowView:shadowView];
+    [self addUIBlock:^(__unused HippyUIManager *uiManager, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
+        UIView *view = viewRegistry[hippyTag];
+        [componentData setProps:props forView:view];
+    }];
 }
 
 HIPPY_EXPORT_METHOD(updateView:(nonnull NSNumber *)hippyTag
                   viewName:(NSString *)viewName // not always reliable, use shadowView.viewName if available
-                  props:(NSDictionary *)props)
-{
+                  props:(NSDictionary *)props) {
     HippyShadowView *shadowView = _shadowViewRegistry[hippyTag];
     HippyComponentData *componentData = _componentDataByName[shadowView.viewName ?: viewName];
     
     id isAnimated = props[@"useAnimation"];
     if (isAnimated && [isAnimated isKindOfClass: [NSNumber class]]) {
-        HippyExtAnimationModule *animationModule = self.bridge.animationModule;
+        HippyNextAnimationModule *animationModule = self.bridge.animationModule;
         props = [animationModule bindAnimaiton:props viewTag:hippyTag rootTag: shadowView.rootTag];
         shadowView.animated = [(NSNumber *)isAnimated boolValue];;
     } else {
         shadowView.animated = NO;
     }
-    
-    NSDictionary *newProps = [shadowView mergeProps: props];
-    NSDictionary *virtualProps = shadowView.props;
-    [componentData setProps:newProps forShadowView:shadowView];
+        
+    NSDictionary *newProps = props;
+    NSDictionary *virtualProps = props;
+    if (shadowView) {
+        newProps = [shadowView mergeProps:props];
+        virtualProps = shadowView.props;
+        [componentData setProps:newProps forShadowView:shadowView];
+    }
+
     
     [self addVirtulNodeBlock:^(__unused HippyUIManager *uiManager, NSDictionary<NSNumber *,HippyVirtualNode *> *virtualNodeRegistry) {
         HippyVirtualNode *node = virtualNodeRegistry[hippyTag];
@@ -1104,11 +1102,9 @@ HIPPY_EXPORT_METHOD(updateView:(nonnull NSNumber *)hippyTag
     }];
 }
 
-
 HIPPY_EXPORT_METHOD(dispatchViewManagerCommand:(nonnull NSNumber *)hippyTag
                   commandID:(NSInteger)commandID
-                  commandArgs:(NSArray<id> *)commandArgs)
-{
+                  commandArgs:(NSArray<id> *)commandArgs) {
     HippyShadowView *shadowView = _shadowViewRegistry[hippyTag];
     HippyComponentData *componentData = _componentDataByName[shadowView.viewName];
     Class managerClass = componentData.managerClass;
@@ -1119,16 +1115,14 @@ HIPPY_EXPORT_METHOD(dispatchViewManagerCommand:(nonnull NSNumber *)hippyTag
     [method invokeWithBridge:_bridge module:componentData.manager arguments:args];
 }
 
-- (void)partialBatchDidFlush
-{
+- (void)partialBatchDidFlush {
     if (self.unsafeFlushUIChangesBeforeBatchEnds) {
         [self flushVirtualNodeBlocks];
         [self flushUIBlocks];
     }
 }
 
-- (void)batchDidComplete
-{
+- (void)batchDidComplete {
     [self _layoutAndMount];
 }
 
@@ -1143,22 +1137,21 @@ HIPPY_EXPORT_METHOD(dispatchViewManagerCommand:(nonnull NSNumber *)hippyTag
  * Sets up animations, computes layout, creates UI mounting blocks for computed layout,
  * runs these blocks and all other already existing blocks.
  */
-- (void)_layoutAndMount
-{
+- (void)_layoutAndMount {
     // Gather blocks to be executed now that all view hierarchy manipulations have
     // been completed (note that these may still take place before layout has finished)
     for (HippyComponentData *componentData in _componentDataByName.allValues) {
         HippyViewManagerUIBlock uiBlock = [componentData uiBlockToAmendWithShadowViewRegistry:_shadowViewRegistry];
         [self addUIBlock:uiBlock];
     }
-    
+
     // Perform layout
     for (NSNumber *hippyTag in _rootViewTags) {
         HippyRootShadowView *rootView = (HippyRootShadowView *)_shadowViewRegistry[hippyTag];
         [self addUIBlock:[self uiBlockWithLayoutUpdateForRootView:rootView]];
         [self _amendPendingUIBlocksWithStylePropagationUpdateForShadowView:rootView];
     }
-    
+
     [self addUIBlock:^(HippyUIManager *uiManager, __unused NSDictionary<NSNumber *, UIView *> *viewRegistry) {
         /**
          * TODO(tadeu): Remove it once and for all
@@ -1167,34 +1160,32 @@ HIPPY_EXPORT_METHOD(dispatchViewManagerCommand:(nonnull NSNumber *)hippyTag
             [node hippyBridgeDidFinishTransaction];
         }
     }];
-    
+
     [self flushVirtualNodeBlocks];
-    
+
     [self flushUIBlocks];
-    
 }
 
-- (void)_layoutAndMount:(NSNumber *)hippyTag
-{
+- (void)_layoutAndMount:(NSNumber *)hippyTag {
     HippyRootShadowView *rootView = (HippyRootShadowView *)_shadowViewRegistry[hippyTag];
-    if (![rootView isKindOfClass: [HippyRootShadowView class]]) {
+    if (![rootView isKindOfClass:[HippyRootShadowView class]]) {
         if (![_bridge isBatchActive]) {
             [self _layoutAndMount];
         }
         return;
     }
-    
+
     // Gather blocks to be executed now that all view hierarchy manipulations have
     // been completed (note that these may still take place before layout has finished)
     for (HippyComponentData *componentData in _componentDataByName.allValues) {
         HippyViewManagerUIBlock uiBlock = [componentData uiBlockToAmendWithShadowViewRegistry:_shadowViewRegistry];
         [self addUIBlock:uiBlock];
     }
-    
+
     // Perform layout
     [self addUIBlock:[self uiBlockWithLayoutUpdateForRootView:rootView]];
     [self _amendPendingUIBlocksWithStylePropagationUpdateForShadowView:rootView];
-    
+
     [self addUIBlock:^(HippyUIManager *uiManager, __unused NSDictionary<NSNumber *, UIView *> *viewRegistry) {
         /**
          * TODO(tadeu): Remove it once and for all
@@ -1203,13 +1194,11 @@ HIPPY_EXPORT_METHOD(dispatchViewManagerCommand:(nonnull NSNumber *)hippyTag
             [node hippyBridgeDidFinishTransaction];
         }
     }];
-    
-#ifdef QBNativeListENABLE
+
     [self flushVirtualNodeBlocks];
-#endif
-    
+
     [self flushUIBlocks];
-    
+
     [self flushUpdateCompletedBlocks];
 }
 
@@ -1219,7 +1208,7 @@ HIPPY_EXPORT_METHOD(dispatchViewManagerCommand:(nonnull NSNumber *)hippyTag
         __weak HippyUIManager *weakSelf = self;
         dispatch_async(dispatch_get_main_queue(), ^{
             HippyUIManager *sSelf = weakSelf;
-            [tmpBlocks enumerateObjectsUsingBlock:^(HippyViewUpdateCompletedBlock  _Nonnull obj, __unused NSUInteger idx, __unused BOOL *stop) {
+            [tmpBlocks enumerateObjectsUsingBlock:^(HippyViewUpdateCompletedBlock _Nonnull obj, __unused NSUInteger idx, __unused BOOL *stop) {
                 obj(sSelf);
             }];
         });
@@ -1227,10 +1216,9 @@ HIPPY_EXPORT_METHOD(dispatchViewManagerCommand:(nonnull NSNumber *)hippyTag
     }
 }
 
-- (void)flushUIBlocks
-{
-    HippyAssertThread(HippyGetUIManagerQueue(),@"flushUIBlocks can only be called from the shadow queue");
-    
+- (void)flushUIBlocks {
+    HippyAssertThread(HippyGetUIManagerQueue(), @"flushUIBlocks can only be called from the shadow queue");
+
     // First copy the previous blocks into a temporary variable, then reset the
     // pending blocks to a new array. This guards against mutation while
     // processing the pending blocks in another thread.
@@ -1240,33 +1228,31 @@ HIPPY_EXPORT_METHOD(dispatchViewManagerCommand:(nonnull NSNumber *)hippyTag
     if (previousPendingUIBlocks.count) {
         // Execute the previously queued UI blocks
         dispatch_async(dispatch_get_main_queue(), ^{
-            HippyUIManager *uiManager = weakManager;
-            @try {
-                for (HippyViewManagerUIBlock block in previousPendingUIBlocks) {
-                    block(uiManager, uiManager->_viewRegistry);
+            if (weakManager) {
+                HippyUIManager *uiManager = weakManager;
+                @try {
+                    for (HippyViewManagerUIBlock block in previousPendingUIBlocks) {
+                        block(uiManager, uiManager->_viewRegistry);
+                    }
+
+                    [uiManager flushListView];
+                } @catch (NSException *exception) {
+                    HippyLogError(@"Exception thrown while executing UI block: %@", exception);
                 }
-                
-                [uiManager flushListView];
-            }
-            @catch (NSException *exception) {
-                HippyLogError(@"Exception thrown while executing UI block: %@", exception);
             }
         });
     }
 }
 
-- (void)flushVirtualNodeBlocks
-{
-    HippyAssertThread(HippyGetUIManagerQueue(),
-                    @"flushUIBlocks can only be called from the shadow queue");
-    
+- (void)flushVirtualNodeBlocks {
+    HippyAssertThread(HippyGetUIManagerQueue(), @"flushUIBlocks can only be called from the shadow queue");
+
     // First copy the previous blocks into a temporary variable, then reset the
     // pending blocks to a new array. This guards against mutation while
     // processing the pending blocks in another thread.
     NSArray<HippyVirtualNodeManagerUIBlock> *previousPendingVirtualNodeBlocks = _pendingVirtualNodeBlocks;
     _pendingVirtualNodeBlocks = [NSMutableArray new];
-    
-    
+
     if (previousPendingVirtualNodeBlocks.count) {
         // Execute the previously queued UI blocks
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1274,31 +1260,28 @@ HIPPY_EXPORT_METHOD(dispatchViewManagerCommand:(nonnull NSNumber *)hippyTag
                 for (HippyVirtualNodeManagerUIBlock block in previousPendingVirtualNodeBlocks) {
                     block(self, self->_nodeRegistry);
                 }
-            }
-            @catch (NSException *exception) {
+            } @catch (NSException *exception) {
                 HippyLogError(@"Exception thrown while executing UI block: %@", exception);
             }
         });
     }
 }
 
-- (void)flushListView
-{
+- (void)flushListView {
     if (_listTags.count != 0) {
-        [_listTags enumerateObjectsUsingBlock:^(NSNumber * _Nonnull tag, __unused NSUInteger idx, __unused BOOL * stop) {
+        [_listTags enumerateObjectsUsingBlock:^(NSNumber *_Nonnull tag, __unused NSUInteger idx, __unused BOOL *stop) {
             HippyVirtualList *listNode = (HippyVirtualList *)self->_nodeRegistry[tag];
-            if (listNode.needFlush) {
+            if (listNode.isDirty) {
                 id <HippyBaseListViewProtocol> listView = (id <HippyBaseListViewProtocol>)self->_viewRegistry[tag];
                 if([listView flush]) {
-                    listNode.needFlush = NO;
+                    listNode.isDirty = NO;
                 }
             }
         }];
     }
 }
 
-- (void)setNeedsLayout
-{
+- (void)setNeedsLayout {
     // If there is an active batch layout will happen when batch finished, so we will wait for that.
     // Otherwise we immidiately trigger layout.
     if (![_bridge isBatchActive]) {
@@ -1306,19 +1289,18 @@ HIPPY_EXPORT_METHOD(dispatchViewManagerCommand:(nonnull NSNumber *)hippyTag
     }
 }
 
-- (void)setNeedsLayout:(NSNumber *)hippyTag
-{
+- (void)setNeedsLayout:(NSNumber *)hippyTag {
     // If there is an active batch layout will happen when batch finished, so we will wait for that.
     // Otherwise we immidiately trigger layout.
     if (![_bridge isBatchActive]) {
-        [self _layoutAndMount: hippyTag];
+        [self _layoutAndMount:hippyTag];
     }
 }
 
+#pragma mark - Measure Functions
 
 HIPPY_EXPORT_METHOD(measure:(nonnull NSNumber *)hippyTag
-                  callback:(HippyResponseSenderBlock)callback)
-{
+                  callback:(HippyResponseSenderBlock)callback) {
     [self addUIBlock:^(__unused HippyUIManager *uiManager, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
         UIView *view = viewRegistry[hippyTag];
         if (!view) {
@@ -1352,22 +1334,51 @@ HIPPY_EXPORT_METHOD(measure:(nonnull NSNumber *)hippyTag
     }];
 }
 
+static NSString * const HippyUIManagerGetBoundingRelToContainerKey = @"relToContainer";
+static NSString * const HippyUIManagerGetBoundingErrMsgrKey = @"errMsg";
+HIPPY_EXPORT_METHOD(getBoundingClientRect:(nonnull NSNumber *)hippyTag
+                    options:(nullable NSDictionary *)options
+                    callback:(HippyResponseSenderBlock)callback ) {
+    if (options && [[options objectForKey:HippyUIManagerGetBoundingRelToContainerKey] boolValue]) {
+        [self measureInWindow:hippyTag withErrMsg:YES callback:callback];
+    } else {
+        [self measureInAppWindow:hippyTag withErrMsg:YES callback:callback];
+    }
+}
+
 HIPPY_EXPORT_METHOD(measureInWindow:(nonnull NSNumber *)hippyTag
-                  callback:(HippyResponseSenderBlock)callback)
-{
+                    callback:(HippyResponseSenderBlock)callback) {
+    // keep the same as the old version, no errMsg return
+    [self measureInWindow:hippyTag withErrMsg:NO callback:callback];
+}
+
+- (void)measureInWindow:(nonnull NSNumber *)hippyTag
+             withErrMsg:(BOOL)withErrMsg
+               callback:(HippyResponseSenderBlock)callback {
     [self addUIBlock:^(__unused HippyUIManager *uiManager, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
         UIView *view = viewRegistry[hippyTag];
         if (!view) {
             // this view was probably collapsed out
-            HippyLogWarn(@"measure cannot find view with tag #%@", hippyTag);
-            callback(@[]);
+            NSString *formatStr = @"measure cannot find view with tag #%@";
+            HippyLogWarn(formatStr, hippyTag);
+            if (withErrMsg) {
+                NSString *errMsg = [NSString stringWithFormat:formatStr, hippyTag];
+                callback(@[@{HippyUIManagerGetBoundingErrMsgrKey : errMsg}]);
+            } else {
+                callback(@[]);
+            }
             return;
         }
-        
         UIView *rootView = viewRegistry[view.rootTag];
         if (!rootView) {
-            HippyLogWarn(@"measure cannot find view's root view with tag #%@", hippyTag);
-            callback(@[]);
+            NSString *formatStr = @"measure cannot find view's root view with tag #%@";
+            HippyLogWarn(formatStr, hippyTag);
+            if (withErrMsg) {
+                NSString *errMsg = [NSString stringWithFormat:formatStr, hippyTag];
+                callback(@[@{HippyUIManagerGetBoundingErrMsgrKey : errMsg}]);
+            } else {
+                callback(@[]);
+            }
             return;
         }
         
@@ -1377,109 +1388,80 @@ HIPPY_EXPORT_METHOD(measureInWindow:(nonnull NSNumber *)hippyTag
                      @"x":@(windowFrame.origin.x),
                      @"y":@(windowFrame.origin.y)}]);
     }];
-    
-    
-    
 }
 
-- (NSDictionary<NSString *, id> *)constantsToExport
-{
+HIPPY_EXPORT_METHOD(measureInAppWindow:(nonnull NSNumber *)hippyTag
+                    callback:(HippyResponseSenderBlock)callback) {
+    // keep the same as the old version, no errMsg return
+    [self measureInAppWindow:hippyTag withErrMsg:NO callback:callback];
+}
+
+- (void)measureInAppWindow:(nonnull NSNumber *)hippyTag
+                withErrMsg:(BOOL)withErrMsg
+                  callback:(HippyResponseSenderBlock)callback {
+    [self addUIBlock:^(__unused HippyUIManager *uiManager, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
+        UIView *view = viewRegistry[hippyTag];
+        if (!view) {
+            // this view was probably collapsed out
+            NSString *formatStr = @"measure cannot find view with tag #%@";
+            HippyLogWarn(formatStr, hippyTag);
+            if (withErrMsg) {
+                NSString *errMsg = [NSString stringWithFormat:formatStr, hippyTag];
+                callback(@[@{HippyUIManagerGetBoundingErrMsgrKey : errMsg}]);
+            } else {
+                callback(@[]);
+            }
+            return;
+        }
+        CGRect windowFrame = [view.window convertRect:view.frame fromView:view.superview];
+        callback(@[@{@"width":@(CGRectGetWidth(windowFrame)),
+                     @"height": @(CGRectGetHeight(windowFrame)),
+                     @"x":@(windowFrame.origin.x),
+                     @"y":@(windowFrame.origin.y)}]);
+    }];
+}
+
+#pragma mark -
+
+- (NSDictionary<NSString *, id> *)constantsToExport {
     NSMutableDictionary<NSString *, NSDictionary *> *allJSConstants = [NSMutableDictionary new];
     NSMutableDictionary<NSString *, NSDictionary *> *directEvents = [NSMutableDictionary new];
-    NSMutableDictionary<NSString *, NSDictionary *> *bubblingEvents = [NSMutableDictionary new];
-    
-    [_componentDataByName enumerateKeysAndObjectsUsingBlock:
-     ^(NSString *name, HippyComponentData *componentData, __unused BOOL *stop) {
-         
-         NSMutableDictionary<NSString *, id> *constantsNamespace =
-         [NSMutableDictionary dictionaryWithDictionary:allJSConstants[name]];
-         
-         // Add manager class
-         constantsNamespace[@"Manager"] = HippyBridgeModuleNameForClass(componentData.managerClass);
-         
-         // Add native props
-         NSDictionary<NSString *, id> *viewConfig = [componentData viewConfig];
-         constantsNamespace[@"NativeProps"] = viewConfig[@"propTypes"];
-         
-         // Add direct events
-         for (NSString *eventName in viewConfig[@"directEvents"]) {
-             if (!directEvents[eventName]) {
-                 directEvents[eventName] = @{
-                                             @"registrationName": [eventName stringByReplacingCharactersInRange:(NSRange){0, 3} withString:@"on"],
-                                             };
-             }
-             if (HIPPY_DEBUG && bubblingEvents[eventName]) {
-                 HippyLogError(@"Component '%@' re-registered bubbling event '%@' as a "
-                             "direct event", componentData.name, eventName);
-             }
-         }
-         
-         // Add bubbling events
-         for (NSString *eventName in viewConfig[@"bubblingEvents"]) {
-             if (!bubblingEvents[eventName]) {
-                 NSString *bubbleName = [eventName stringByReplacingCharactersInRange:(NSRange){0, 3} withString:@"on"];
-                 bubblingEvents[eventName] = @{
-                                               @"phasedRegistrationNames": @{
-                                                       @"bubbled": bubbleName,
-                                                       @"captured": [bubbleName stringByAppendingString:@"Capture"],
-                                                       }
-                                               };
-             }
-             if (HIPPY_DEBUG && directEvents[eventName]) {
-                 HippyLogError(@"Component '%@' re-registered direct event '%@' as a "
-                             "bubbling event", componentData.name, eventName);
-             }
-         }
-         
-         allJSConstants[name] = constantsNamespace;
-     }];
-    
-#if !TARGET_OS_TV
-    _currentInterfaceOrientation = [HippySharedApplication() statusBarOrientation];
-#endif
-    [allJSConstants addEntriesFromDictionary:@{
-                                               @"customBubblingEventTypes": bubblingEvents,
-                                               @"customDirectEventTypes": directEvents,
-                                               @"Dimensions": HippyExportedDimensions(NO)
-                                               }];
-    
+
+    [_componentDataByName enumerateKeysAndObjectsUsingBlock:^(NSString *name, HippyComponentData *componentData, __unused BOOL *stop) {
+        NSMutableDictionary<NSString *, id> *constantsNamespace = [NSMutableDictionary dictionaryWithDictionary:allJSConstants[name]];
+
+        // Add manager class
+        constantsNamespace[@"Manager"] = HippyBridgeModuleNameForClass(componentData.managerClass);
+
+        // Add native props
+        NSDictionary<NSString *, id> *viewConfig = [componentData viewConfig];
+        constantsNamespace[@"NativeProps"] = viewConfig[@"propTypes"];
+
+        // Add direct events
+        for (NSString *eventName in viewConfig[@"directEvents"]) {
+            if (!directEvents[eventName]) {
+                directEvents[eventName] = @ {
+                    @"registrationName": [eventName stringByReplacingCharactersInRange:(NSRange) { 0, 3 } withString:@"on"],
+                };
+            }
+        }
+        allJSConstants[name] = constantsNamespace;
+    }];
+
+    NSDictionary *dim = hippyExportedDimensions(self.bridge);
+    [allJSConstants addEntriesFromDictionary:@{ @"customDirectEventTypes": directEvents, @"Dimensions": dim }];
     return allJSConstants;
 }
 
-static BOOL isiPhoneX()
-{
-    CGRect screenBounds = [UIScreen mainScreen].bounds;
-    return MAX(CGRectGetWidth(screenBounds), CGRectGetHeight(screenBounds)) >= 812;
-}
-
-static NSDictionary *HippyExportedDimensions(BOOL rotateBounds)
-{
-    HippyAssertMainQueue();
-    
-    // Don't use HippyScreenSize since it the interface orientation doesn't apply to it
-    CGRect screenSize = [[UIScreen mainScreen] bounds];
-    return @{
-             @"window": @{
-                     @"width": @(rotateBounds ? screenSize.size.height : screenSize.size.width),
-                     @"height": @(rotateBounds ? screenSize.size.width : screenSize.size.height),
-                     @"scale": @(HippyScreenScale()),
-                     @"statusBarHeight": isiPhoneX() ? @(44) : @(20),
-                     },
-             @"screen": @{@"statusBarHeight": isiPhoneX() ? @(44) : @(20)}
-             };
-}
-
-
-- (void)rootViewForHippyTag:(NSNumber *)hippyTag withCompletion:(void (^)(UIView *view))completion
-{
+- (void)rootViewForHippyTag:(NSNumber *)hippyTag withCompletion:(void (^)(UIView *view))completion {
     HippyAssertMainQueue();
     HippyAssert(completion != nil, @"Attempted to resolve rootView for tag %@ without a completion block", hippyTag);
-    
+
     if (hippyTag == nil) {
         completion(nil);
         return;
     }
-    
+
     dispatch_async(HippyGetUIManagerQueue(), ^{
         NSNumber *rootTag = [self _rootTagForHippyTag:hippyTag];
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1492,18 +1474,21 @@ static NSDictionary *HippyExportedDimensions(BOOL rotateBounds)
     });
 }
 
-- (NSNumber *)_rootTagForHippyTag:(NSNumber *)hippyTag
-{
+- (NSNumber *)rootHippyTag {
+    return _rootViewTags.count > 0 ? _rootViewTags.allObjects.firstObject : @(0);
+}
+
+- (NSNumber *)_rootTagForHippyTag:(NSNumber *)hippyTag {
     HippyAssert(!HippyIsMainQueue(), @"Should be called on shadow queue");
-    
+
     if (hippyTag == nil) {
         return nil;
     }
-    
+
     if (HippyIsHippyRootView(hippyTag)) {
         return hippyTag;
     }
-    
+
     NSNumber *rootTag = nil;
     HippyShadowView *shadowView = _shadowViewRegistry[hippyTag];
     while (shadowView) {
@@ -1514,150 +1499,134 @@ static NSDictionary *HippyExportedDimensions(BOOL rotateBounds)
         }
         shadowView = parent;
     }
-    
+
     return rootTag;
 }
 
 static UIView *_jsResponder;
 
-+ (UIView *)JSResponder
-{
++ (UIView *)JSResponder {
     return _jsResponder;
 }
 
-- (UIView *)updateNode:(HippyVirtualNode *)oldNode withNode:(HippyVirtualNode *)node
-{
+- (UIView *)updateNode:(HippyVirtualNode *)oldNode withNode:(HippyVirtualNode *)node {
     UIView *result = nil;
     @try {
         UIView *cachedView = self->_viewRegistry[node.hippyTag];
         if (cachedView) {
             return cachedView;
         }
-        
+
         if (oldNode == nil) {
             return nil;
         }
         
-        NSDictionary *diff = [oldNode diff: node];
-        
+        if (![[oldNode viewName] isEqualToString:[node viewName]]) {
+            return nil;
+        }
+
+        NSDictionary *diff = [oldNode diff:node];
+
         if (diff == nil) {
             HippyAssert(diff != nil, @"updateView two view node data struct is different");
         }
-        
+
         NSDictionary *update = diff[@"update"];
         NSDictionary *insert = diff[@"insert"];
         NSArray *remove = diff[@"remove"];
         NSDictionary *tags = diff[@"tag"];
-        
+
         for (NSNumber *tag in remove) {
             UIView *view = self->_viewRegistry[tag];
             [view.superview clearSortedSubviews];
             [view.superview removeHippySubview:view];
-            [self removeNativeNodeView: view];
+            [self removeNativeNodeView:view];
         }
-        
+
         result = [node createView:^UIView *(HippyVirtualNode *subNode) {
             NSNumber *subTag = subNode.hippyTag;
             UIView *subview = nil;
-            
-            if (update[subTag]) { // 更新props
+
+            if (update[subTag]) {  // 更新props
                 HippyVirtualNode *oldSubNode = self->_nodeRegistry[update[subTag]];
                 subview = self->_viewRegistry[oldSubNode.hippyTag];
                 if (subview == nil) {
-                    HippyLogInfo(@"update node error");
                     NSString *viewName = subNode.viewName;
                     NSNumber *tag = subNode.hippyTag;
                     NSDictionary *props = subNode.props;
                     HippyComponentData *componentData = self->_componentDataByName[viewName];
-                    subview = [componentData createViewWithTag: tag initProps: props];
-                    [componentData setProps: props forView: subview];
-                    self->_viewRegistry[tag] = subview;
+                    subview = [self createViewByComponentData:componentData hippyVirtualNode:subNode hippyTag:tag properties:props viewName:viewName];
                 } else {
                     HippyComponentData *componentData = self->_componentDataByName[oldSubNode.viewName];
                     NSDictionary *oldProps = oldSubNode.props;
                     NSDictionary *newProps = subNode.props;
-                    newProps = [self mergeProps: newProps oldProps: oldProps];
-                    [componentData setProps: newProps forView: subview];
+                    newProps = [self mergeProps:newProps oldProps:oldProps];
+                    [componentData setProps:newProps forView:subview];
                     [subview.layer removeAllAnimations];
-                    [subview didUpdateWithNode: subNode];
+                    [subview didUpdateWithNode:subNode];
                 }
-            } else if (insert[subTag]) { // 插入
+            } else if (insert[subTag]) {  // 插入
                 subview = self->_viewRegistry[subTag];
                 if (subview == nil) {
                     subview = [self createViewFromNode:subNode];
                 }
             }
-            
-            if (tags[subTag]) { // 更新tag
+
+            if (tags[subTag]) {  // 更新tag
                 NSNumber *oldSubTag = tags[subTag];
                 subview = self->_viewRegistry[oldSubTag];
                 if (subview == nil) {
-                    HippyLogInfo(@"update node tag error");
                     NSString *viewName = subNode.viewName;
                     NSNumber *tag = subNode.hippyTag;
                     NSDictionary *props = subNode.props;
                     HippyComponentData *componentData = self->_componentDataByName[viewName];
-                    subview = [componentData createViewWithTag: tag initProps: props];
-                    [componentData setProps: props forView: subview];
-                    self->_viewRegistry[tag] = subview;
+                    subview = [self createViewByComponentData:componentData hippyVirtualNode:subNode hippyTag:tag properties:props viewName:viewName];
                 } else {
                     [subview sendDetachedFromWindowEvent];
                     [subview.layer removeAllAnimations];
                     subview.hippyTag = subTag;
-                    [self->_viewRegistry removeObjectForKey: oldSubTag];
+                    [self->_viewRegistry removeObjectForKey:oldSubTag];
                     self->_viewRegistry[subTag] = subview;
                     [subview sendAttachedToWindowEvent];
                 }
             }
-            
+
             if (!CGRectEqualToRect(subview.frame, subNode.frame)) {
-                [subview hippySetFrame: subNode.frame];
+                [subview hippySetFrame:subNode.frame];
             }
-            
+
             return subview;
-            
         } insertChildrens:^(UIView *container, NSArray<UIView *> *childrens) {
             NSInteger index = 0;
             for (UIView *subview in childrens) {
-                [container removeHippySubview: subview];
-                [container insertHippySubview: subview atIndex: index];
+                [container removeHippySubview:subview];
+                [container insertHippySubview:subview atIndex:index];
                 index++;
             }
+            [container clearSortedSubviews];
             [container didUpdateHippySubviews];
         }];
-        
+
     } @catch (NSException *exception) {
         MttHippyException(exception);
     }
     return result;
 }
 
-- (UIView *)createViewFromNode:(HippyVirtualNode *)node
-{
+- (UIView *)createViewFromNode:(HippyVirtualNode *)node {
     UIView *result = nil;
     NSMutableArray *tranctions = [NSMutableArray new];
-#ifndef HIPPY_DEBUG
     @try {
-#endif
         result = [node createView:^UIView *(HippyVirtualNode *subNode) {
             NSString *viewName = subNode.viewName;
             NSNumber *tag = subNode.hippyTag;
             NSDictionary *props = subNode.props;
             HippyComponentData *componentData = self->_componentDataByName[viewName];
-            UIView *view = [componentData createViewWithTag: tag initProps: props];
-            [componentData setProps: props forView: view];
-            self->_viewRegistry[tag] = view;
+            UIView *view = [self createViewByComponentData:componentData hippyVirtualNode:subNode hippyTag:tag properties:props viewName:viewName];
             CGRect frame = subNode.frame;
-            //如果native端的HippyRootView.frame发生改变，会触发重新布局，HippyShadowView会更新frame。
-            //但是HippyVirtualNode来不及更新frame。
-            //这里优先使用HippyShadowView.frame绘制view
-//            HippyShadowView *shadowView = self->_shadowViewRegistry[tag];
-//            if (shadowView && CGRectNotNAN(shadowView.frame)) {
-//                frame = shadowView.frame;
-//            }
             [view hippySetFrame:frame];
-            if ([view respondsToSelector: @selector(hippyBridgeDidFinishTransaction)]) {
-                [tranctions addObject: view];
+            if ([view respondsToSelector:@selector(hippyBridgeDidFinishTransaction)]) {
+                [tranctions addObject:view];
             }
             //            [self callCacheUIFunctionCallIfNeed: tag];
             if ([self->_listAnimatedViewTags containsObject:tag]) {
@@ -1667,44 +1636,47 @@ static UIView *_jsResponder;
         } insertChildrens:^(UIView *container, NSArray<UIView *> *childrens) {
             NSInteger index = 0;
             for (UIView *view in childrens) {
-                [container insertHippySubview: view atIndex: index++];
+                [container insertHippySubview:view atIndex:index++];
             }
             [container didUpdateHippySubviews];
         }];
-        
+
         for (UIView *view in tranctions) {
             [view hippyBridgeDidFinishTransaction];
         }
-#ifndef HIPPY_DEBUG
     } @catch (NSException *exception) {
         MttHippyException(exception);
     }
-#endif
     return result;
 }
 
-- (void)removeNativeNode:(HippyVirtualNode *)node
-{
+- (void)removeNativeNode:(HippyVirtualNode *)node {
     [node removeView:^(NSNumber *tag) {
         [self->_listAnimatedViewTags removeObject:tag];
-        [self->_viewRegistry removeObjectForKey: tag];
+        [self->_viewRegistry removeObjectForKey:tag];
     }];
 }
 
-- (void)removeNativeNodeView:(UIView *)nodeView
-{
+- (void)removeNativeNodeView:(UIView *)nodeView {
     [nodeView removeView:^(NSNumber *hippyTag) {
         if (hippyTag) {
             [self->_listAnimatedViewTags removeObject:hippyTag];
-            [self->_viewRegistry removeObjectForKey: hippyTag];
+            [self->_viewRegistry removeObjectForKey:hippyTag];
         }
     }];
 }
 
-- (NSDictionary *)mergeProps:(NSDictionary *)newProps oldProps:(NSDictionary *)oldProps
-{
-    NSMutableDictionary *tmpProps = [NSMutableDictionary dictionaryWithDictionary: newProps];
-    [oldProps enumerateKeysAndObjectsUsingBlock:^(NSString *  _Nonnull key, __unused id  _Nonnull obj, __unused BOOL *stop) {
+- (void)removeNativeViewFromTags:(NSArray<NSNumber *> *)hippyTags {
+    NSArray<UIView *> *views = [_viewRegistry objectsForKeys:hippyTags
+                                              notFoundMarker:[[UIView alloc] initWithFrame:CGRectZero]];
+    for (UIView *view in views) {
+        [self removeNativeNodeView:view];
+    }
+}
+
+- (NSDictionary *)mergeProps:(NSDictionary *)newProps oldProps:(NSDictionary *)oldProps {
+    NSMutableDictionary *tmpProps = [NSMutableDictionary dictionaryWithDictionary:newProps];
+    [oldProps enumerateKeysAndObjectsUsingBlock:^(NSString *_Nonnull key, __unused id _Nonnull obj, __unused BOOL *stop) {
         if (tmpProps[key] == nil) {
             tmpProps[key] = (id)kCFNull;
         }
@@ -1716,11 +1688,8 @@ static UIView *_jsResponder;
 
 @implementation HippyBridge (HippyUIManager)
 
-- (HippyUIManager *)uiManager
-{
+- (HippyUIManager *)uiManager {
     return [self moduleForClass:[HippyUIManager class]];
 }
 
 @end
-
-

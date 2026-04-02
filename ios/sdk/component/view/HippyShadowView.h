@@ -22,18 +22,15 @@
 
 #import <UIKit/UIKit.h>
 
-#include "MTTNode.h"
-#include "MTTFlex.h"
-#include "MTTLayout.h"
 #import "HippyComponent.h"
 #import "HippyRootView.h"
 
 #import "HippyVirtualNode.h"
 
 typedef NS_ENUM(NSUInteger, HippyUpdateLifecycle) {
-  HippyUpdateLifecycleUninitialized = 0,
-  HippyUpdateLifecycleComputed,
-  HippyUpdateLifecycleDirtied,
+    HippyUpdateLifecycleUninitialized = 0,
+    HippyUpdateLifecycleComputed,
+    HippyUpdateLifecycleDirtied,
 };
 
 typedef void (^HippyApplierBlock)(NSDictionary<NSNumber *, UIView *> *viewRegistry);
@@ -61,12 +58,14 @@ typedef void (^HippyApplierVirtualBlock)(NSDictionary<NSNumber *, HippyVirtualNo
 - (void)removeHippySubview:(HippyShadowView *)subview NS_REQUIRES_SUPER;
 
 @property (nonatomic, weak, readonly) HippyShadowView *superview;
-//@property (nonatomic, assign, readonly) CSSNodeRef cssNode;
-@property (nonatomic, assign, readonly) MTTNodeRef nodeRef;
 @property (nonatomic, copy) NSString *viewName;
-@property (nonatomic, strong) UIColor *backgroundColor; // Used to propagate to children
+@property (nonatomic, strong) UIColor *backgroundColor;  // Used to propagate to children
 @property (nonatomic, copy) HippyDirectEventBlock onLayout;
 @property (nonatomic, assign) BOOL isList;
+@property (nonatomic, weak) HippyBridge *bridge;
+@property (nonatomic, assign) MTTDirection layoutDirection;
+@property (nonatomic, copy) NSString *visibility;
+@property (nonatomic, assign) BOOL visibilityChanged;
 
 /**
  * isNewView - Used to track the first time the view is introduced into the hierarchy.  It is initialized YES, then is
@@ -169,6 +168,20 @@ typedef void (^HippyApplierVirtualBlock)(NSDictionary<NSNumber *, HippyVirtualNo
  */
 @property (nonatomic, assign) OverflowType overflow;
 
+
+#pragma mark - Text Attachment Properties
+
+/// Vertical Alignment for Text / Text Attachment,
+/// Note that this property only takes effect for Nested Text.
+@property (nonatomic, assign) HippyTextVerticalAlignType verticalAlignType;
+
+/// Vertical Align Offset for Text / Text Attachment,
+/// Note that this property only takes effect for Nested Text.
+@property (nonatomic, assign) CGFloat verticalAlignOffset;
+
+
+#pragma mark -
+
 /**
  * Calculate property changes that need to be propagated to the view.
  * The applierBlocks set contains HippyApplierBlock functions that must be applied
@@ -176,25 +189,21 @@ typedef void (^HippyApplierVirtualBlock)(NSDictionary<NSNumber *, HippyVirtualNo
  */
 
 - (void)collectUpdatedProperties:(NSMutableSet<HippyApplierBlock> *)applierBlocks
-						virtualApplierBlocks:(NSMutableSet<HippyApplierVirtualBlock> *)virtualApplierBlocks
-								parentProperties:(NSDictionary<NSString *, id> *)parentProperties;
-
-- (void)collectUpdatedProperties:(NSMutableSet<HippyApplierBlock> *)applierBlocks
+            virtualApplierBlocks:(NSMutableSet<HippyApplierVirtualBlock> *)virtualApplierBlocks
                 parentProperties:(NSDictionary<NSString *, id> *)parentProperties;
 
-
+- (void)collectUpdatedProperties:(NSMutableSet<HippyApplierBlock> *)applierBlocks parentProperties:(NSDictionary<NSString *, id> *)parentProperties;
 
 /**
  * Process the updated properties and apply them to view. Shadow view classes
  * that add additional propagating properties should override this method.
  */
 - (NSDictionary<NSString *, id> *)processUpdatedProperties:(NSMutableSet<HippyApplierBlock> *)applierBlocks
-																			virtualApplierBlocks:(NSMutableSet<HippyApplierVirtualBlock> *)virtualApplierBlocks
-																					parentProperties:(NSDictionary<NSString *, id> *)parentProperties NS_REQUIRES_SUPER;
+                                      virtualApplierBlocks:(NSMutableSet<HippyApplierVirtualBlock> *)virtualApplierBlocks
+                                          parentProperties:(NSDictionary<NSString *, id> *)parentProperties NS_REQUIRES_SUPER;
 
 - (NSDictionary<NSString *, id> *)processUpdatedProperties:(NSMutableSet<HippyApplierBlock> *)applierBlocks
                                           parentProperties:(NSDictionary<NSString *, id> *)parentProperties NS_REQUIRES_SUPER;
-
 
 /**
  * Can be called by a parent on a child in order to calculate all views whose frame needs
@@ -207,22 +216,6 @@ typedef void (^HippyApplierVirtualBlock)(NSDictionary<NSNumber *, HippyVirtualNo
                       hidden:(BOOL)hidden
             absolutePosition:(CGPoint)absolutePosition;
 
-/**
- * Apply the CSS layout.
- * This method also calls `applyLayoutToChildren:` internally. The functionality
- * is split into two methods so subclasses can override `applyLayoutToChildren:`
- * while using default implementation of `applyLayoutNode:`.
- */
-- (void)applyLayoutNode:(MTTNodeRef)node
-      viewsWithNewFrame:(NSMutableSet<HippyShadowView *> *)viewsWithNewFrame
-       absolutePosition:(CGPoint)absolutePosition NS_REQUIRES_SUPER;
-
-/**
- * Enumerate the child nodes and tell them to apply layout.
- */
-- (void)applyLayoutToChildren:(MTTNodeRef)node
-            viewsWithNewFrame:(NSMutableSet<HippyShadowView *> *)viewsWithNewFrame
-             absolutePosition:(CGPoint)absolutePosition;
 
 /**
  * Return whether or not this node acts as a leaf node in the eyes of CSSLayout. For example

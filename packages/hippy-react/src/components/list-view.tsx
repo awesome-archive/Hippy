@@ -1,23 +1,48 @@
+/*
+ * Tencent is pleased to support the open source community by making
+ * Hippy available.
+ *
+ * Copyright (C) 2017-2019 THL A29 Limited, a Tencent company.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/* eslint-disable no-param-reassign */
+
 import React from 'react';
-import Style from '@localTypes/style';
-import { LayoutEvent } from '@localTypes/event';
+import { Fiber } from '@hippy/react-reconciler';
 import { callUIFunction } from '../modules/ui-manager-module';
 import { warn } from '../utils';
 import { Device } from '../native';
+import { LayoutEvent, Platform } from '../types';
+import ListViewItem, { ListViewItemProps } from './list-view-item';
+import PullHeader from './pull-header';
+import PullFooter from './pull-footer';
 
 type DataItem = any;
 
-interface ListViewProps {
+export interface ListViewProps {
   /**
    * Render specific number of rows of data.
-   * Set equal to dataShource.length in most case.
+   * Set equal to dataSource.length in most case.
    */
-  numberOfRows: number;
+  numberOfRows?: number;
 
   /**
    * Data source
    */
-  dataSource: DataItem[];
+  dataSource?: DataItem[];
 
   /**
    * Specfic how many data will render at first screen.
@@ -41,7 +66,7 @@ interface ListViewProps {
    * The default value is zero, which results in the scroll event being sent only once
    * each time the view is scrolled.
    */
-  scrollEventThrottle: number;
+  scrollEventThrottle?: number;
 
   /**
    * When `true`, shows a horizon scroll indicator.
@@ -57,11 +82,15 @@ interface ListViewProps {
    * @param {number} index - Index Of data.
    * @returns {React.Component}
    */
-  renderRow(
+  renderRow?: (
     data: DataItem,
     unknown?: any, // FIXME: What's the argument meaning?
     index?: number,
-  ): React.ReactElement;
+  ) => React.ReactElement;
+
+  renderPullHeader?: () => React.ReactElement;
+
+  renderPullFooter?: () => React.ReactElement;
 
   /**
    * Each row have different type, it will be using at render recycle.
@@ -69,7 +98,7 @@ interface ListViewProps {
    * @param {number} index - Index Of data.
    * @returns {string}
    */
-  getRowType?(index: number): string;
+  getRowType?: (index: number) => number;
 
   /**
    * Returns the style for specific index of row.
@@ -77,7 +106,23 @@ interface ListViewProps {
    * @param {number} index - Index Of data.
    * @returns {Object}
    */
-  getRowStyle?(index: number): Style;
+  getRowStyle?: (index: number) => HippyTypes.StyleProp;
+
+  /**
+   * Returns the style for PullHeader.
+   *
+   * @param {number} index - Index Of data.
+   * @returns {Object}
+   */
+  getHeaderStyle?: () => HippyTypes.StyleProp;
+
+  /**
+   * Returns the style for PullFooter.
+   *
+   * @param {number} index - Index Of data.
+   * @returns {Object}
+   */
+  getFooterStyle?: () => HippyTypes.StyleProp;
 
   /**
    * Specfic the key of row, for better data diff
@@ -86,42 +131,40 @@ interface ListViewProps {
    * @param {number} index - Index Of data.
    * @returns {string}
    */
-  getRowKey?(index: number): string;
+  getRowKey?: (index: number) => string;
 
   /**
    * Is the row should sticky after scrolling up.
    * @param {number} index - Index Of data.
    * @returns {boolean}
    */
-  rowShouldSticky?(index: number): boolean;
-  style?: Style;
+  rowShouldSticky?: (index: number) => boolean;
+  style?: HippyTypes.StyleProp;
 
   /**
    *  Called when the `ListView` is scrolling to bottom.
    */
-  onEndReached?(): void;
+  onEndReached?: () => void;
+
+  /**
+   * the same with onEndReached
+   */
+  onLoadMore?: () => void
 
   /**
    *  Called when the row first layouting or layout changed.
-   *
-   * @param {Object} evt - Layout event data
-   * @param {number} evt.nativeEvent.x - The position X of component
-   * @param {number} evt.nativeEvent.y - The position Y of component
-   * @param {number} evt.nativeEvent.width - The width of component
-   * @param {number} evt.nativeEvent.hegiht - The height of component
-   * @param {number} index - Index of data.
    */
-  onRowLayout?(evt: LayoutEvent, index: number): void;
+  onRowLayout?: (evt: LayoutEvent, index: number) => void;
 
   /**
    * Called when the momentum scroll starts (scroll which occurs as the ListView starts gliding).
    */
-  onMomentumScrollBegin?(): void;
+  onMomentumScrollBegin?: () => void;
 
   /**
    * Called when the momentum scroll ends (scroll which occurs as the ListView glides to a stop).
    */
-  onMomentumScrollEnd?(): void;
+  onMomentumScrollEnd?: () => void;
 
   /**
    * Fires at most once per frame during scrolling.
@@ -131,60 +174,110 @@ interface ListViewProps {
    * @param {number} evt.contentOffset.x - Offset X of scrolling.
    * @param {number} evt.contentOffset.y - Offset Y of scrolling.
    */
-  onScroll?(evt: { contentOffset: { x: number, y: number }}): void; // FIXME: TS compile error.
+  onScroll?: (evt: { contentOffset: { x: number, y: number }}) => void;
 
   /**
    * Called when the user begins to drag the scroll view.
    */
-  onScrollBeginDrag?(): void;
+  onScrollBeginDrag?: () => void;
 
   /**
    * Called when the user stops dragging the scroll view and it either stops or begins to glide.
    */
-  onScrollEndDrag?(): void;
+  onScrollEndDrag?: () => void;
 
+  /**
+   * android expose ability flag
+   */
+  exposureEventEnabled?: boolean
+
+  /**
+   * Called when user pulls the ListView down
+   */
+  onHeaderPulling?: () => void
+
+  /**
+   * Called when user release the pulling ListView
+   */
+  onHeaderReleased?: () => void
+
+  /**
+   * Called when user swipe up ListView to get more data on reaching the footer
+   */
+  onFooterPulling?: () => void
+
+  /**
+   * Called when user release the getting-more-data ListView
+   */
+  onFooterReleased?: () => void
+
+  /**
+   * Called when a whole new list item appears
+   */
+  onAppear?: (index: number) => void
+
+  /**
+   * Called when a whole list item disappears
+   */
+  onDisappear?: (index: number) => void
+
+  /**
+   * Called when a new list item will appear(1 px)
+   */
+  onWillAppear?: (index: number) => void
+
+  /**
+   * Called when a new list item will disappear(1 px)
+   */
+  onWillDisappear?: (index: number) => void
 }
 
-interface ListItemViewProps {
-  type?: string;
-  key?: string;
-  itemViewType?: string;
-  sticky?: boolean;
-  style?: Style;
-  onLayout?: (evt: any) => void;
-}
-
-interface ListViewState {
+export interface ListViewState {
   initialListReady: boolean;
 }
 
-function ListViewItem(props: ListItemViewProps) {
-  return (
-    <li nativeName="ListViewItem" {...props} />
-  );
+interface AttrMap {
+  [propName: string]: string;
 }
+
+const androidAttrMap: AttrMap = {
+  onDisappear: 'onDisAppear',
+};
+const iosAttrMap: AttrMap = {
+  onDisappear: 'onDisappear',
+};
 
 /**
  * Recyclable list for better performance, and lower memory usage.
  * @noInheritDoc
  */
-class ListView extends React.Component<ListViewProps, ListViewState> {
-  private instance: HTMLUListElement | null = null;
-
+export class ListView<P extends ListViewProps, S extends ListViewState>
+  extends React.Component<P, S> {
+  protected static defaultProps = {
+    numberOfRows: 0,
+  };
   /**
-   * @ignore
+   * change key
    */
-  constructor(props: ListViewProps) {
+  protected static convertName(functionName: string): string {
+    if (Device.platform.OS === Platform.android && androidAttrMap[functionName]) {
+      return androidAttrMap[functionName];
+    } if (Device.platform.OS === Platform.ios && iosAttrMap[functionName]) {
+      return iosAttrMap[functionName];
+    }
+    return functionName;
+  }
+  protected instance: HTMLUListElement | Fiber | null = null;
+  protected pullHeader: PullHeader | null = null;
+  protected pullFooter: PullFooter | null = null;
+
+
+  public constructor(props: P) {
     super(props);
     this.handleInitialListReady = this.handleInitialListReady.bind(this);
-    this.state = {
-      initialListReady: false,
-    };
+    this.state = this.getInitialState();
   }
 
-  /**
-   * @ignore
-   */
   public componentDidMount() {
     const { getRowKey } = this.props;
     if (!getRowKey) {
@@ -193,146 +286,285 @@ class ListView extends React.Component<ListViewProps, ListViewState> {
   }
 
   /**
-   * Scrolls to a given index of itme, either immediately, with a smooth animation.
+   * Scrolls to a given index of item, either immediately, with a smooth animation.
    *
    * @param {number} xIndex - Scroll to horizon index X.
-   * @param {number} yIndex - Scroll To veritical index Y.
+   * @param {number} yIndex - Scroll To vertical index Y.
    * @param {boolean} animated - With smooth animation.By default is true.
    */
-  public scrollToIndex(xIndex: number, yIndex: number, animated: boolean) {
+  public scrollToIndex(xIndex: number | undefined, yIndex: number | undefined, animated: boolean | undefined) {
     if (typeof xIndex !== 'number' || typeof yIndex !== 'number' || typeof animated !== 'boolean') {
       return;
     }
-    callUIFunction(this.instance, 'scrollToIndex', [xIndex, yIndex, animated]);
+    callUIFunction(this.instance as Fiber, 'scrollToIndex', [xIndex, yIndex, animated]);
   }
 
   /**
    * Scrolls to a given x, y offset, either immediately, with a smooth animation.
    *
    * @param {number} xOffset - Scroll to horizon offset X.
-   * @param {number} yOffset - Scroll To veritical offset Y.
+   * @param {number} yOffset - Scroll To vertical offset Y.
    * @param {boolean} animated - With smooth animation.By default is true.
    */
-  public scrollToContentOffset(xOffset: number, yOffset: number, animated: boolean) {
+  public scrollToContentOffset(
+    xOffset: number | undefined,
+    yOffset: number | undefined,
+    animated: boolean | undefined,
+  ) {
     if (typeof xOffset !== 'number' || typeof yOffset !== 'number' || typeof animated !== 'boolean') {
       return;
     }
-    callUIFunction(this.instance, 'scrollToContentOffset', [xOffset, yOffset, animated]);
-  }
-
-  private handleInitialListReady() {
-    this.setState({ initialListReady: true });
+    callUIFunction(this.instance as Fiber, 'scrollToContentOffset', [xOffset, yOffset, animated]);
   }
 
   /**
-   * @ignore
+   * Expand the PullHeaderView and display the content
    */
+  public expandPullHeader() {
+    if (this.pullHeader) {
+      this.pullHeader.expandPullHeader();
+    }
+  }
+
+  /**
+   * Collapse the PullHeaderView and hide the content
+   */
+  public collapsePullHeader(options: object) {
+    if (this.pullHeader) {
+      this.pullHeader.collapsePullHeader(options);
+    }
+  }
+
+  /**
+   * Expand the PullFooterView and display the content
+   */
+  public expandPullFooter() {
+    if (this.pullFooter) {
+      this.pullFooter.expandPullFooter();
+    }
+  }
+
+  /**
+   * Collapse the PullView and hide the content
+   */
+  public collapsePullFooter() {
+    if (this.pullFooter) {
+      this.pullFooter.collapsePullFooter();
+    }
+  }
+
   public render() {
-    let { numberOfRows } = this.props;
     const {
+      children,
       style,
       renderRow,
+      renderPullHeader,
+      renderPullFooter,
       getRowType,
       getRowStyle,
+      getHeaderStyle,
+      getFooterStyle,
       getRowKey,
       dataSource,
       initialListSize,
       rowShouldSticky,
       onRowLayout,
-      ...nativeProps
+      onHeaderPulling,
+      onHeaderReleased,
+      onFooterPulling,
+      onFooterReleased,
+      onAppear,
+      onDisappear,
+      onWillAppear,
+      onWillDisappear,
+      ...restProps
     } = this.props;
-    if (typeof renderRow !== 'function') {
-      throw new Error('renderRow props is necessary for ListView');
-    }
-
-    const {
-      initialListReady,
-    } = this.state;
-    const itemList = [];
-
-    if (!numberOfRows && dataSource) {
-      numberOfRows = dataSource.length;
-    }
-
-    if (!initialListReady) {
-      numberOfRows = Math.min(numberOfRows, (initialListSize || 10));
-    }
-
-    for (let index = 0; index < numberOfRows; index += 1) {
-      const itemProps: ListItemViewProps = {};
-      let rowChildren;
-
-      if (dataSource) {
-        rowChildren = renderRow(dataSource[index], null, index);
-      } else {
-        rowChildren = renderRow(index);
+    const itemList: JSX.Element[] = [];
+    const nativeProps = restProps as P;
+    if (typeof renderRow === 'function') {
+      const {
+        initialListReady,
+      } = this.state;
+      let { numberOfRows = ListView.defaultProps.numberOfRows } = this.props;
+      const pullHeader = this.getPullHeader();
+      const pullFooter = this.getPullFooter();
+      if (!numberOfRows && dataSource) {
+        numberOfRows = dataSource.length;
       }
-
-      if (typeof getRowKey === 'function') {
-        itemProps.key = getRowKey(index);
+      if (!initialListReady) {
+        numberOfRows = Math.min(numberOfRows, (initialListSize || 15));
       }
+      for (let index = 0; index < numberOfRows; index += 1) {
+        const itemProps: ListViewItemProps = {};
+        let rowChildren;
+        if (dataSource) {
+          rowChildren = renderRow(dataSource[index], null, index);
+        } else {
+          rowChildren = renderRow(index);
+        }
 
-      if (typeof getRowStyle === 'function') {
-        itemProps.style = getRowStyle(index);
-      }
+        this.handleRowProps(itemProps, index, { getRowKey, getRowStyle, getRowType, onRowLayout, rowShouldSticky });
 
-      if (typeof onRowLayout === 'function') {
-        itemProps.onLayout = (e: any) => {
-          onRowLayout(e, index);
-        };
-      }
-
-      if (typeof getRowType === 'function') {
-        let type = getRowType(index);
-        if (type) {
-          if (typeof type !== 'string') {
-            type = (type as any).toString();
+        [
+          { func: onAppear, name: 'onAppear' },
+          { func: onDisappear, name: 'onDisappear' },
+          { func: onWillAppear, name: 'onWillAppear' },
+          { func: onWillDisappear, name: 'onWillDisappear' },
+        ].forEach(({ func, name }) => {
+          if (typeof func === 'function') {
+            itemProps[ListView.convertName(name)] = () => {
+              func(index);
+            };
           }
-          itemProps.type = type;
-          if (Device.platform.OS === 'android') {
-            itemProps.itemViewType = type;
-          }
+        });
+        if (rowChildren) {
+          itemList.push((
+            <ListViewItem {...itemProps}>
+              {rowChildren}
+            </ListViewItem>
+          ));
         }
       }
-
+      if (pullHeader) {
+        itemList.unshift(pullHeader);
+      }
+      if (pullFooter) {
+        itemList.push(pullFooter);
+      }
       if (typeof rowShouldSticky === 'function') {
-        itemProps.sticky = rowShouldSticky(index);
+        Object.assign(nativeProps, {
+          rowShouldSticky: true,
+        });
       }
-
-      if (rowChildren) {
-        itemList.push((
-          <ListViewItem {...itemProps}>
-            {rowChildren}
-          </ListViewItem>
-        ));
+      const appearEventList = [onAppear, onDisappear, onWillAppear, onWillDisappear];
+      Object.assign(nativeProps, {
+        exposureEventEnabled: appearEventList.some(func => typeof func === 'function'),
+      });
+      if (Device.platform.OS ===  Platform.ios) {
+        nativeProps.numberOfRows = itemList.length;
       }
+      if (typeof initialListSize !== 'undefined') {
+        nativeProps.initialListSize = initialListSize;
+      }
+      nativeProps.style = {
+        overflow: 'scroll',
+        ...style,
+      };
     }
 
-    nativeProps.numberOfRows = itemList.length;
-    (nativeProps as ListViewProps).initialListSize = initialListSize;
-    (nativeProps as ListViewProps).style = {
-      overflow: 'scroll',
-      ...style,
-    };
-
     return (
+      // @ts-ignore
       <ul
-        ref={(ref) => { this.instance = ref; }}
+        ref={(ref) => {
+          this.instance = ref;
+        }}
         nativeName="ListView"
         initialListReady={this.handleInitialListReady}
         {...nativeProps}
       >
-        {itemList}
+        {itemList.length ? itemList : children}
       </ul>
     );
   }
-}
 
-/**
-* @ignore
-*/
-ListView.defaultProps = {
-  numberOfRows: 0,
-};
+  protected getInitialState(): S {
+    return {
+      initialListReady: false,
+    } as S;
+  }
+
+  protected handleInitialListReady() {
+    this.setState({ initialListReady: true });
+  }
+
+  protected getPullHeader() {
+    const { renderPullHeader, onHeaderPulling, onHeaderReleased, getHeaderStyle } = this.props;
+    let pullHeader: JSX.Element | null = null;
+    let style;
+    if (typeof getHeaderStyle === 'function') {
+      style = getHeaderStyle();
+    }
+    if (typeof renderPullHeader === 'function') {
+      pullHeader = (
+        <PullHeader
+          style={style}
+          key={'pull-header'}
+          ref={(ref) => {
+            this.pullHeader = ref;
+          }}
+          onHeaderPulling={onHeaderPulling}
+          onHeaderReleased={onHeaderReleased}
+        >
+          { renderPullHeader() }
+        </PullHeader>
+      );
+    }
+    return pullHeader;
+  }
+
+  protected getPullFooter() {
+    const { renderPullFooter, onFooterPulling, onFooterReleased, getFooterStyle } = this.props;
+    let pullFooter: JSX.Element | null = null;
+    let style;
+    if (typeof getFooterStyle === 'function') {
+      style = getFooterStyle();
+    }
+    if (typeof renderPullFooter === 'function') {
+      pullFooter = (
+        <PullFooter
+          style={style}
+          key={'pull-footer'}
+          ref={(ref) => {
+            this.pullFooter = ref;
+          }}
+          onFooterPulling={onFooterPulling}
+          onFooterReleased={onFooterReleased}
+        >
+          { renderPullFooter() }
+        </PullFooter>
+      );
+    }
+    return pullFooter;
+  }
+
+  protected handleRowProps(
+    itemProps: ListViewItemProps,
+    index: number,
+    { getRowKey, getRowStyle, onRowLayout, getRowType, rowShouldSticky }:
+    Pick<ListViewProps,
+    'getRowKey'
+    | 'getRowStyle'
+    | 'onRowLayout'
+    | 'getRowType'
+    | 'rowShouldSticky'
+    >,
+  ) {
+    if (typeof getRowKey === 'function') {
+      itemProps.key = getRowKey(index);
+    }
+
+    if (typeof getRowStyle === 'function') {
+      itemProps.style = getRowStyle(index);
+    }
+
+    if (typeof onRowLayout === 'function') {
+      itemProps.onLayout = (e: any) => {
+        onRowLayout(e, index);
+      };
+    }
+
+    if (typeof getRowType === 'function') {
+      const type = getRowType(index);
+      if (!Number.isInteger(type)) {
+        warn('getRowType must returns a number');
+      }
+      itemProps.type = type;
+    }
+
+    if (typeof rowShouldSticky === 'function') {
+      itemProps.sticky = rowShouldSticky(index);
+    }
+  }
+}
 
 export default ListView;

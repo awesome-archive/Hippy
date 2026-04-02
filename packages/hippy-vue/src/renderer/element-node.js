@@ -1,43 +1,259 @@
+/*
+ * Tencent is pleased to support the open source community by making
+ * Hippy available.
+ *
+ * Copyright (C) 2017-2019 THL A29 Limited, a Tencent company.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 /* eslint-disable no-underscore-dangle */
 /* eslint-disable no-param-reassign */
 
-import colorParser from '@css-loader/color-parser';
-import ViewNode from './view-node';
-import { updateChild, updateWithChildren } from './native';
+import { PROPERTIES_MAP } from '@css-loader/css-parser';
 import { getViewMeta, normalizeElementName } from '../elements';
-import { Event, EventEmitter } from './native/event';
-import { Text } from './native/components';
+import { EventMethod } from '../util/event';
 import {
   unicodeToChar,
   tryConvertNumber,
   setsAreEqual,
+  endsWith,
+  getBeforeLoadStyle,
+  warn,
+  isDev,
+  whitespaceFilter,
 } from '../util';
 import Native from '../runtime/native';
+import { updateChild, updateWithChildren } from './native';
+import { Event, EventEmitter } from './native/event';
+import { Text } from './native/components';
+import ViewNode from './view-node';
+
+// linear-gradient direction description map
+const LINEAR_GRADIENT_DIRECTION_MAP = {
+  totop: '0',
+  totopright: 'totopright',
+  toright: '90',
+  tobottomright: 'tobottomright',
+  tobottom: '180', // default value
+  tobottomleft: 'tobottomleft',
+  toleft: '270',
+  totopleft: 'totopleft',
+};
+
+const DEGREE_UNIT = {
+  TURN: 'turn',
+  RAD: 'rad',
+  DEG: 'deg',
+};
+
+/**
+ * convert string value to string degree
+ * @param {string} value
+ * @param {string} unit
+ */
+function convertToDegree(value, unit = DEGREE_UNIT.DEG) {
+  const convertedNumValue = parseFloat(value);
+  let result = value || '';
+  const [, decimals] = value.split('.');
+  if (decimals && decimals.length > 2) {
+    result = convertedNumValue.toFixed(2);
+  }
+  switch (unit) {
+    // turn unit
+    case DEGREE_UNIT.TURN:
+      result = `${(convertedNumValue * 360).toFixed(2)}`;
+      break;
+    // radius unit
+    case DEGREE_UNIT.RAD:
+      result = `${(180 / Math.PI * convertedNumValue).toFixed(2)}`;
+      break;
+    default:
+  }
+  return result;
+}
+
+/**
+ * parse gradient angle or direction
+ * @param {string} value
+ */
+function getLinearGradientAngle(value) {
+  const processedValue = (value || '').replace(/\s*/g, '').toLowerCase();
+  const reg = /^([+-]?(?=(?<digit>\d+))\k<digit>\.?\d*)+(deg|turn|rad)|(to\w+)$/g;
+  const valueList = reg.exec(processedValue);
+  if (!Array.isArray(valueList)) return;
+  // if default direction is to bottom, i.e. 180degree
+  let angle = '180';
+  const [direction, angleValue, angleUnit] = valueList;
+  if (angleValue && angleUnit) { // angle value
+    angle = convertToDegree(angleValue, angleUnit);
+  } else if (direction && typeof LINEAR_GRADIENT_DIRECTION_MAP[direction] !== 'undefined') { // direction description
+    angle = LINEAR_GRADIENT_DIRECTION_MAP[direction];
+  } else {
+    warn('linear-gradient direction or angle is invalid, default value [to bottom] would be used');
+  }
+  return angle;
+}
+
+/**
+ * parse gradient color stop
+ * @param {string} value
+ */
+function getLinearGradientColorStop(value) {
+  const processedValue = (value || '').replace(/\s+/g, ' ').trim();
+  const [color, percentage] = processedValue.split(/\s+(?![^(]*?\))/);
+  const percentageCheckReg = /^([+-]?\d+\.?\d*)%$/g;
+  if (color && !percentageCheckReg.exec(color) && !percentage) {
+    return {
+      color: Native.parseColor(color),
+    };
+  }
+  if (color && percentageCheckReg.exec(percentage)) {
+    return {
+      // color stop ratio
+      ratio: parseFloat(percentage.split('%')[0]) / 100,
+      color: Native.parseColor(color),
+    };
+  }
+  warn('linear-gradient color stop is invalid');
+}
+
+/**
+ * parse backgroundImage
+ * @param {string} property
+ * @param {string|Object|number|boolean} value
+ * @returns {(string|{})[]}
+ */
+function parseBackgroundImage(property, value, style) {
+  // reset the backgroundImage and linear gradient property
+  delete style[property];
+  removeLinearGradient(property, value, style);
+  let processedValue = value;
+  let processedProperty = property;
+  if (value.indexOf('linear-gradient') === 0) {
+    processedProperty = 'linearGradient';
+    const valueString = value.substring(value.indexOf('(') + 1, value.lastIndexOf(')'));
+    const tokens = valueString.split(/,(?![^(]*?\))/);
+    const colorStopList = [];
+    processedValue = {};
+    tokens.forEach((value, index) => {
+      if (index === 0) {
+        // the angle of linear-gradient parameter can be optional
+        const angle = getLinearGradientAngle(value);
+        if (angle) {
+          processedValue.angle = angle;
+        } else {
+          // if angle ignored, default direction is to bottom, i.e. 180degree
+          processedValue.angle = '180';
+          const colorObject = getLinearGradientColorStop(value);
+          if (colorObject) colorStopList.push(colorObject);
+        }
+      } else {
+        const colorObject = getLinearGradientColorStop(value);
+        if (colorObject) colorStopList.push(colorObject);
+      }
+    });
+    processedValue.colorStopList = colorStopList;
+  } else {
+    const regexp = /(?:\(['"]?)(.*?)(?:['"]?\))/;
+    const executed = regexp.exec(value);
+    if (executed && executed.length > 1) {
+      [, processedValue] = executed;
+    }
+  }
+  return [processedProperty, processedValue];
+}
+
+/**
+ * remove linear gradient
+ * @param property
+ * @param value
+ * @param style
+ */
+function removeLinearGradient(property, value, style) {
+  if (property === 'backgroundImage' && style.linearGradient) {
+    delete style.linearGradient;
+  }
+}
+
+const offsetMap = {
+  textShadowOffsetX: 'width',
+  textShadowOffsetY: 'height',
+};
+/**
+ * parse text shadow offset
+ * @param property
+ * @param value
+ * @param style
+ * @returns {(*|number)[]}
+ */
+function parseTextShadowOffset(property, value = 0, style) {
+  style.textShadowOffset = style.textShadowOffset || {};
+  Object.assign(style.textShadowOffset, {
+    [offsetMap[property]]: value,
+  });
+  return ['textShadowOffset', style.textShadowOffset];
+}
+
+/**
+ * remove text shadow offset
+ * @param property
+ * @param value
+ * @param style
+ */
+function removeTextShadowOffset(property, value, style) {
+  if ((property === 'textShadowOffsetX' || property === 'textShadowOffsetY') && style.textShadowOffset) {
+    delete style.textShadowOffset[offsetMap[property]];
+    if (Object.keys(style.textShadowOffset).length === 0) {
+      delete style.textShadowOffset;
+    }
+  }
+}
+
+/**
+ * remove empty style
+ * @param property
+ * @param value
+ * @param style
+ */
+function removeStyle(property, value, style) {
+  if (value === undefined) {
+    delete style[property];
+    removeLinearGradient(property, value, style);
+    removeTextShadowOffset(property, value, style);
+  }
+}
 
 class ElementNode extends ViewNode {
   constructor(tagName) {
     super();
-
     // Tag name
     this.tagName = tagName;
-
     // ID attribute in template.
     this.id = '';
-
     // style attribute in template.
     this.style = {};
-
-    // Vue style scope id.
-    this._styleScopeId = null;
-
+    // Vue style scope id list.
+    this.scopeIdList = [];
     // Class attribute in template.
     this.classList = new Set(); // Fake DOMTokenLis
-
     // Other attributes in template.
     this.attributes = {};
-
     // Event observer.
     this._emitter = null;
+    // Style pre-processor
+    this.beforeLoadStyle = getBeforeLoadStyle();
   }
 
   toString() {
@@ -60,6 +276,9 @@ class ElementNode extends ViewNode {
     return this._meta;
   }
 
+  get emitter() {
+    return this._emitter;
+  }
 
   hasAttribute(key) {
     return !!this.attributes[key];
@@ -69,19 +288,19 @@ class ElementNode extends ViewNode {
     return this.attributes[key];
   }
 
-  /* istanbul ignore next */
-  setAttribute(key, value) {
+  setAttribute(rawKey, rawValue, options = {}) {
     try {
+      let key = rawKey;
+      let value = rawValue;
       // detect expandable attrs for boolean values
       // See https://vuejs.org/v2/guide/components-props.html#Passing-a-Boolean
       if (typeof (this.attributes[key]) === 'boolean' && value === '') {
         value = true;
       }
       if (key === undefined) {
-        updateChild(this);
+        !options.notToNative && updateChild(this);
         return;
       }
-
       switch (key) {
         case 'class': {
           const newClassList = new Set(value.split(' ').filter(x => x.trim()));
@@ -90,7 +309,7 @@ class ElementNode extends ViewNode {
           }
           this.classList = newClassList;
           // update current node and child nodes
-          updateWithChildren(this);
+          !options.notToNative && updateWithChildren(this);
           return;
         }
         case 'id':
@@ -99,7 +318,7 @@ class ElementNode extends ViewNode {
           }
           this.id = value;
           // update current node and child nodes
-          updateWithChildren(this);
+          !options.notToNative && updateWithChildren(this);
           return;
         // Convert text related to character for interface.
         case 'text':
@@ -110,33 +329,59 @@ class ElementNode extends ViewNode {
             try {
               value = value.toString();
             } catch (err) {
-              throw new TypeError(`Property ${key} must be string：${err.message}`);
+              warn(`Property ${key} must be string：${err.message}`);
             }
           }
-          value = value.trim().replace(/(&nbsp;|Â)/g, ' ');
-          this.attributes[key] = unicodeToChar(value);
+          if (!options || !options.textUpdate) {
+            // white space handler
+            value = whitespaceFilter(value);
+          }
+          value = unicodeToChar(value);
           break;
         }
-        // FIXME: UpdateNode numberOfRows will makes Image flicker on Android.
-        //        So make it working on iOS only.
         case 'numberOfRows':
-          this.attributes[key] = value;
           if (Native.Platform !== 'ios') {
             return;
           }
           break;
         case 'caretColor':
         case 'caret-color':
-          this.attributes['caret-color'] = colorParser(value);
+          key = 'caret-color';
+          value = Native.parseColor(value);
           break;
+        case 'break-strategy':
+          key = 'breakStrategy';
+          break;
+        case 'placeholderTextColor':
+        case 'placeholder-text-color':
+          key = 'placeholderTextColor';
+          value = Native.parseColor(value);
+          break;
+        case 'underlineColorAndroid':
+        case 'underline-color-android':
+          key = 'underlineColorAndroid';
+          value = Native.parseColor(value);
+          break;
+        case 'nativeBackgroundAndroid': {
+          const nativeBackgroundAndroid = value;
+          if (typeof nativeBackgroundAndroid.color !== 'undefined') {
+            nativeBackgroundAndroid.color = Native.parseColor(nativeBackgroundAndroid.color);
+          }
+          key = 'nativeBackgroundAndroid';
+          value = nativeBackgroundAndroid;
+          break;
+        }
         default:
-          this.attributes[key] = tryConvertNumber(value);
       }
-
-      updateChild(this);
+      if (this.attributes[key] === value) return;
+      this.attributes[key] = value;
+      if (typeof this.filterAttribute === 'function') {
+        this.filterAttribute(this.attributes);
+      }
+      !options.notToNative && updateChild(this);
     } catch (err) {
       // Throw error in development mode
-      if (process.env.NODE_ENV !== 'production') {
+      if (isDev()) {
         throw err;
       }
     }
@@ -146,97 +391,153 @@ class ElementNode extends ViewNode {
     delete this.attributes[key];
   }
 
-  setStyle(property, value) {
-    if (value === undefined) {
-      delete this.style[property];
+  setStyles(batchStyles) {
+    if (!batchStyles || typeof batchStyles !== 'object' || Object.keys(batchStyles).length === 0) {
       return;
     }
-    let v = value;
-    switch (property) {
+    Object.keys(batchStyles).forEach((styleKey) => {
+      const styleValue = batchStyles[styleKey];
+      this.setStyle(styleKey, styleValue, true);
+    });
+    updateChild(this);
+  }
+
+  setStyle(rawKey, rawValue, notToNative = false) {
+    // Preprocess the style
+    let {
+      value,
+      property: key,
+    } = this.beforeLoadStyle({
+      property: rawKey,
+      value: rawValue,
+    });
+    if (rawValue === undefined) {
+      removeStyle(key, value, this.style);
+      if (!notToNative) {
+        updateChild(this);
+      }
+      return;
+    }
+    // Process the specific style value
+    switch (key) {
       case 'fontWeight':
-        if (typeof v !== 'string') {
-          v = v.toString();
+        if (typeof value !== 'string') {
+          value = value.toString();
         }
         break;
-      case 'caretColor':
-        this.attributes['caret-color'] = colorParser(value);
+      case 'backgroundImage': {
+        [key, value] = parseBackgroundImage(key, value, this.style);
         break;
+      }
+      case 'textShadowOffsetX':
+      case 'textShadowOffsetY': {
+        [key, value] = parseTextShadowOffset(key, value, this.style);
+        break;
+      }
+      case 'textShadowOffset': {
+        const { x = 0, width = 0, y = 0, height = 0 } = value || {};
+        value = { width: x || width, height: y || height };
+        break;
+      }
       default: {
-        if (typeof v === 'string') {
-          v = value.trim();
+        // Convert the property to W3C standard.
+        if (Object.prototype.hasOwnProperty.call(PROPERTIES_MAP, key)) {
+          key = PROPERTIES_MAP[key];
+        }
+        // Convert the value
+        if (typeof value === 'string') {
+          value = value.trim();
           // Convert inline color style to int
-          if (property.toLowerCase().indexOf('color') >= 0) {
-            v = colorParser(v, Native.Platform);
-          // Convert inline length style, drop the px unit
-          } else if (v.indexOf('px') === v.length - 2) {
-            v = parseFloat(value.slice(0, value.indexOf('px')));
+          if (key.toLowerCase().indexOf('color') >= 0) {
+            value = Native.parseColor(value);
+            // Convert inline length style, drop the px unit
+          } else if (endsWith(value, 'px')) {
+            value = parseFloat(value.slice(0, value.length - 2));
           } else {
-            v = tryConvertNumber(v);
+            value = tryConvertNumber(value);
           }
         }
       }
     }
-
-    if (v === undefined || v === null || this.style[property] === v) {
+    if (value === undefined || value === null || this.style[key] === value) {
       return;
     }
-    this.style[property] = v;
-    updateChild(this);
+    this.style[key] = value;
+    if (!notToNative) {
+      updateChild(this);
+    }
+  }
+
+  /**
+   * set native style props
+   */
+  setNativeProps(nativeProps) {
+    if (nativeProps) {
+      const { style } = nativeProps;
+      this.setStyles(style);
+    }
+  }
+
+  /**
+   * repaint element with the latest style map, which maybe loaded from HMR chunk or dynamic chunk
+   */
+  repaintWithChildren() {
+    updateWithChildren(this);
   }
 
   setStyleScope(styleScopeId) {
     if (typeof styleScopeId !== 'string') {
       styleScopeId = styleScopeId.toString();
     }
-    this._styleScopeId = styleScopeId;
+    if (styleScopeId && !this.scopeIdList.includes(styleScopeId)) {
+      this.scopeIdList.push(styleScopeId);
+    }
+  }
+
+  get styleScopeId() {
+    return this.scopeIdList;
   }
 
   appendChild(childNode) {
-    super.appendChild(childNode);
-
-    if (childNode.meta.symbol === Text) {
-      this.setText(childNode.text);
+    if (childNode && childNode.meta.symbol === Text) {
+      this.setText(childNode.text, { notToNative: true });
     }
+    super.appendChild(childNode);
   }
 
   insertBefore(childNode, referenceNode) {
-    super.insertBefore(childNode, referenceNode);
-
-    if (childNode.meta.symbol === Text) {
-      this.setText(childNode.text);
+    if (childNode && childNode.meta.symbol === Text) {
+      this.setText(childNode.text, { notToNative: true });
     }
+    super.insertBefore(childNode, referenceNode);
   }
 
   moveChild(childNode, referenceNode) {
-    super.moveChild(childNode, referenceNode);
-
-    if (childNode.meta.symbol === Text) {
-      this.setText(childNode.text);
+    if (childNode && childNode.meta.symbol === Text) {
+      this.setText(childNode.text, { notToNative: true });
     }
+    super.moveChild(childNode, referenceNode);
   }
 
   removeChild(childNode) {
-    super.removeChild(childNode);
-
-    if (childNode.meta.symbol === Text) {
-      this.setText('');
+    if (childNode && childNode.meta.symbol === Text) {
+      this.setText('', { notToNative: true });
     }
+    super.removeChild(childNode);
   }
 
-  setText(text) {
+  setText(text, options = {}) {
     // Hacking for textarea, use value props to instance text props
     if (this.tagName === 'textarea') {
-      return this.setAttribute('value', text);
+      return this.setAttribute('value', text,  { notToNative: !!options.notToNative });
     }
-    return this.setAttribute('text', text);
+    return this.setAttribute('text', text, { notToNative: !!options.notToNative });
   }
 
   addEventListener(eventNames, callback, options) {
     if (!this._emitter) {
       this._emitter = new EventEmitter(this);
     }
-    this._emitter.addEventListener(eventNames, callback, options);
-
     // Added default scrollEventThrottle when scroll event is added.
     if (eventNames === 'scroll' && !(this.getAttribute('scrollEventThrottle') > 0)) {
       const scrollEventThrottle = 200;
@@ -244,7 +545,15 @@ class ElementNode extends ViewNode {
         this.attributes.scrollEventThrottle = scrollEventThrottle;
       }
     }
-
+    if (typeof this.polyfillNativeEvents === 'function') {
+      ({ eventNames, callback, options } = this.polyfillNativeEvents(
+        EventMethod.ADD,
+        eventNames,
+        callback,
+        options,
+      ));
+    }
+    this._emitter.addEventListener(eventNames, callback, options);
     updateChild(this);
   }
 
@@ -252,20 +561,28 @@ class ElementNode extends ViewNode {
     if (!this._emitter) {
       return null;
     }
-    return this._emitter.removeEventListener(eventNames, callback, options);
+    if (typeof this.polyfillNativeEvents === 'function') {
+      ({ eventNames, callback, options } = this.polyfillNativeEvents(
+        EventMethod.REMOVE,
+        eventNames,
+        callback,
+        options,
+      ));
+    }
+    const observer = this._emitter.removeEventListener(eventNames, callback, options);
+    updateChild(this);
+    return observer;
   }
 
   dispatchEvent(eventInstance) {
     if (!(eventInstance instanceof Event)) {
       throw new Error('dispatchEvent method only accept Event instance');
     }
-
     // Current Target always be the event listener.
     eventInstance.currentTarget = this;
-
     // But target be the first target.
-    // Be careful, here's different than Browser,
-    // because Hippy can't callback without element _emitter.
+    // Be careful, here's different from Browser,
+    // because Hippy can't call back without element _emitter.
     if (!eventInstance.target) {
       eventInstance.target = this;
       // IMPORTANT: It's important for vnode diff and directive trigger.
@@ -273,11 +590,9 @@ class ElementNode extends ViewNode {
         eventInstance.target.value = eventInstance.value;
       }
     }
-
     if (this._emitter) {
       this._emitter.emit(eventInstance);
     }
-
     if (this.parentNode && eventInstance.bubbles) {
       this.parentNode.dispatchEvent.call(this.parentNode, eventInstance);
     }
@@ -285,12 +600,13 @@ class ElementNode extends ViewNode {
 
   /**
    * getBoundingClientRect
-   *
+   * @deprecated
    * Get the position and size of element
    * Because it's a async function, need await prefix.
    *
    * And if the element is out of visible area, result will be none.
    */
+
   getBoundingClientRect() {
     return Native.measureInWindow(this);
   }
@@ -298,7 +614,7 @@ class ElementNode extends ViewNode {
   /**
    * Scroll children to specific position.
    */
-  scrollToPosition(x = 0, y = 0, duration = 1000)  {
+  scrollToPosition(x = 0, y = 0, duration = 1000) {
     if (typeof x !== 'number' || typeof y !== 'number') {
       return;
     }
@@ -320,6 +636,14 @@ class ElementNode extends ViewNode {
     } else {
       this.scrollToPosition(x, y, duration);
     }
+  }
+
+  setPressed(pressed) {
+    Native.callUIFunction(this, 'setPressed', [pressed]);
+  }
+
+  setHotspot(x, y) {
+    Native.callUIFunction(this, 'setHotspot', [x, y]);
   }
 }
 

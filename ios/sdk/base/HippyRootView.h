@@ -21,10 +21,11 @@
  */
 
 #import <UIKit/UIKit.h>
-
 #import "HippyBridge.h"
 
 @protocol HippyRootViewDelegate;
+
+NS_ASSUME_NONNULL_BEGIN
 
 /**
  * This enum is used to define size flexibility type of the root view.
@@ -34,10 +35,10 @@
  * rootViewDidChangeIntrinsicSize method of the HippyRootViewDelegate will be called.
  */
 typedef NS_ENUM(NSInteger, HippyRootViewSizeFlexibility) {
-  HippyRootViewSizeFlexibilityNone = 0,
-  HippyRootViewSizeFlexibilityWidth,
-  HippyRootViewSizeFlexibilityHeight,
-  HippyRootViewSizeFlexibilityWidthAndHeight,
+    HippyRootViewSizeFlexibilityNone = 0,
+    HippyRootViewSizeFlexibilityWidth,
+    HippyRootViewSizeFlexibilityHeight,
+    HippyRootViewSizeFlexibilityWidthAndHeight,
 };
 
 /**
@@ -54,36 +55,42 @@ extern NSString *const HippyContentDidAppearNotification;
  */
 @interface HippyRootView : UIView
 
+/// Create HippyRootView instance
+///
+/// @param bridge the hippyBridge instance
+/// @param moduleName module name
+/// @param initialProperties application properties, see appProperties property.
+/// @param shareOptions Shared data between different rootViews on same bridge.
+/// @param delegate HippyRootViewDelegate
+///
+/// Note: shareOptions will not sent to the front end.
+///
 - (instancetype)initWithBridge:(HippyBridge *)bridge
-					moduleName:(NSString *)moduleName
-			 initialProperties:(NSDictionary *)initialProperties
-				  shareOptions:(NSDictionary *)shareOptions
-					  delegate:(id<HippyRootViewDelegate>)delegate;
+                    moduleName:(NSString *)moduleName
+             initialProperties:(nullable NSDictionary *)initialProperties
+                  shareOptions:(nullable NSDictionary *)shareOptions
+                      delegate:(nullable id<HippyRootViewDelegate>)delegate;
 
-- (instancetype)initWithBundleURL:(NSURL *)bundleURL
-					   moduleName:(NSString *)moduleName
-				initialProperties:(NSDictionary *)initialProperties
-					launchOptions:(NSDictionary *)launchOptions
-					 shareOptions:(NSDictionary *)shareOptions
-						debugMode:(BOOL)mode
-						 delegate:(id<HippyRootViewDelegate>)delegate;
 
-/**
- * - Convenience initializer -
- * A bridge will be created internally.
- * This initializer is intended to be used when the app has a single HippyRootView,
- * otherwise create an `HippyBridge` and pass it in via `initWithBridge:moduleName:`
- * to all the instances.
- */
-
+/// Create HippyRootView instance
+/// & Load the business BundleURL
+/// & Run application
+///
+/// @param bridge the hippyBridge instance
+/// @param businessURL the bundleURL to load
+/// @param moduleName module name
+/// @param initialProperties application properties, see appProperties property.
+/// @param shareOptions Shared data between different rootViews on same bridge.
+/// @param delegate HippyRootViewDelegate
+///
+/// Note: shareOptions will not sent to the front end.
+///
 - (instancetype)initWithBridge:(HippyBridge *)bridge
-				   businessURL:(NSURL *)businessURL
-					moduleName:(NSString *)moduleName
-			 initialProperties:(NSDictionary *)initialProperties
-				 launchOptions:(NSDictionary *)launchOptions
-				  shareOptions:(NSDictionary *)shareOptions
-					 debugMode:(BOOL)mode
-					  delegate:(id<HippyRootViewDelegate>)delegate;
+                   businessURL:(NSURL *)businessURL
+                    moduleName:(NSString *)moduleName
+             initialProperties:(nullable NSDictionary *)initialProperties
+                  shareOptions:(nullable NSDictionary *)shareOptions
+                      delegate:(nullable id<HippyRootViewDelegate>)delegate;
 
 /**
  * The name of the JavaScript module to execute within the
@@ -118,6 +125,8 @@ extern NSString *const HippyContentDidAppearNotification;
  * rootViewDidChangeIntrinsicSize method of HippyRootViewDelegate is called.
  */
 @property (readonly, nonatomic, assign) CGSize intrinsicSize;
+
+@property (readonly, nonatomic) NSNumber *hippyTag;
 
 /**
  * The delegate that handles intrinsic size updates.
@@ -167,7 +176,6 @@ extern NSString *const HippyContentDidAppearNotification;
 
 - (void)secondayBundleDidFinishLoad:(NSError *)error;
 
-
 /**
  * Timings for hiding the loading view after the content has loaded. Both of
  * these values default to 0.25 seconds.
@@ -176,7 +184,22 @@ extern NSString *const HippyContentDidAppearNotification;
 @property (nonatomic, assign) NSTimeInterval loadingViewFadeDuration;
 @property (nonatomic, assign) Class customTouchHandler;
 
-// MttRN:
 - (void)bundleFinishedLoading:(HippyBridge *)bridge;
 - (void)runApplication:(HippyBridge *)bridge;
+
+
+#pragma mark -
+
+/// This method should be called when the host controller's view's size is changed
+///  (i.e. for the root view controller when its window rotates or is resized).
+///
+///  Note that `useViewWillTransitionMethodToMonitorOrientation` flag must be set when init bridge,
+///  otherwise calling this function takes no effect.
+///
+/// - Parameter size: the new size
+- (void)onHostControllerTransitionedToSize:(CGSize)size;
+
+
 @end
+
+NS_ASSUME_NONNULL_END

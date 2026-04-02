@@ -1,13 +1,34 @@
+/*
+ * Tencent is pleased to support the open source community by making
+ * Hippy available.
+ *
+ * Copyright (C) 2017-2019 THL A29 Limited, a Tencent company.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 /* eslint-disable import/prefer-default-export */
-/* eslint-disable class-methods-use-this */
 /* eslint-disable prefer-destructuring */
-/* eslint-disable key-spacing */
 /* eslint-disable no-cond-assign */
-/* eslint-disable arrow-body-style */
 /* eslint-disable no-useless-escape */
-/* eslint-disable max-len */
-/* eslint-disable no-continue */
 /* eslint-disable no-param-reassign */
+
+import { isNullOrUndefined } from '../../../util';
+
+function wrap(text) {
+  return text ? ` ${text} ` : '';
+}
 
 /**
  * Base classes
@@ -15,6 +36,10 @@
 class SelectorCore {
   lookupSort(sorter, base) {
     sorter.sortAsUniversal(base || this);
+  }
+
+  removeSort(sorter, base) {
+    sorter.removeAsUniversal(base || this);
   }
 }
 
@@ -43,22 +68,22 @@ class SimpleSelectorSequence extends SimpleSelector {
   constructor(selectors) {
     super();
     this.specificity = selectors.reduce((sum, sel) => sel.specificity + sum, 0);
-    this.head = selectors.reduce((prev, curr) => {
-      return !prev || (curr.rarity > prev.rarity) ? curr : prev;
-    }, null);
+    this.head = selectors.reduce((prev, curr) => (!prev || (curr.rarity > prev.rarity) ? curr : prev), null);
     this.dynamic = selectors.some(sel => sel.dynamic);
     this.selectors = selectors;
   }
 
   toString() {
-    return `${this.selectors.join('')}${this.combinator}`;
+    return `${this.selectors.join('')}${wrap(this.combinator)}`;
   }
 
   match(node) {
+    if (!node) return false;
     return this.selectors.every(sel => sel.match(node));
   }
 
   mayMatch(node) {
+    if (!node) return false;
     return this.selectors.every(sel => sel.mayMatch(node));
   }
 
@@ -68,6 +93,10 @@ class SimpleSelectorSequence extends SimpleSelector {
 
   lookupSort(sorter, base) {
     this.head.lookupSort(sorter, base || this);
+  }
+
+  removeSort(sorter, base) {
+    this.head.removeSort(sorter, base || this);
   }
 }
 
@@ -83,10 +112,12 @@ class UniversalSelector extends SimpleSelector {
   }
 
   toString() {
-    return `*${this.combinator}`;
+    return `*${wrap(this.combinator)}`;
   }
 
-  match() { return true; }
+  match() {
+    return true;
+  }
 }
 
 /**
@@ -102,15 +133,20 @@ class IdSelector extends SimpleSelector {
   }
 
   toString() {
-    return `#${this.id}${this.combinator}`;
+    return `#${this.id}${wrap(this.combinator)}`;
   }
 
   match(node) {
+    if (!node) return false;
     return node.id === this.id;
   }
 
   lookupSort(sorter, base) {
     sorter.sortById(this.id, base || this);
+  }
+
+  removeSort(sorter, base) {
+    sorter.removeById(this.id, base || this);
   }
 }
 
@@ -128,15 +164,20 @@ class TypeSelector extends SimpleSelector {
   }
 
   toString() {
-    return `${this.cssType}${this.combinator}`;
+    return `${this.cssType}${wrap(this.combinator)}`;
   }
 
   match(node) {
-    return node.cssType === this.cssType;
+    if (!node) return false;
+    return node.tagName === this.cssType;
   }
 
   lookupSort(sorter, base) {
     sorter.sortByType(this.cssType, base || this);
+  }
+
+  removeSort(sorter, base) {
+    sorter.removeByType(this.cssType, base || this);
   }
 }
 
@@ -153,15 +194,20 @@ class ClassSelector extends SimpleSelector {
   }
 
   toString() {
-    return `.${this.className}${this.combinator}`;
+    return `.${this.className}${wrap(this.combinator)}`;
   }
 
   match(node) {
-    return node.classList.size && node.classList.has(this.className);
+    if (!node) return false;
+    return node.classList && node.classList.size && node.classList.has(this.className);
   }
 
   lookupSort(sorter, base) {
     sorter.sortByClass(this.className, base || this);
+  }
+
+  removeSort(sorter, base) {
+    sorter.removeByClass(this.className, base || this);
   }
 }
 
@@ -178,10 +224,11 @@ class PseudoClassSelector extends SimpleSelector {
   }
 
   toString() {
-    return `:${this.cssPseudoClass}${this.combinator}`;
+    return `:${this.cssPseudoClass}${wrap(this.combinator)}`;
   }
 
   match(node) {
+    if (!node) return false;
     return node.cssPseudoClasses && node.cssPseudoClasses.has(this.cssPseudoClass);
   }
 
@@ -195,9 +242,24 @@ class PseudoClassSelector extends SimpleSelector {
 }
 
 /**
+ * get node attribute or styleScopeId value
+ * @param node
+ * @param attribute
+ * @returns {*}
+ */
+const getNodeAttrVal = (node, attribute) => {
+  const attr = node.attributes[attribute];
+  if (typeof attr !== 'undefined') {
+    return attr;
+  }
+  if (Array.isArray(node.styleScopeId) && node.styleScopeId.includes(attribute)) {
+    return attribute;
+  }
+};
+
+/**
  * Attribute Selector
  */
-
 class AttributeSelector extends SimpleSelector {
   constructor(attribute, test, value) {
     super();
@@ -210,52 +272,59 @@ class AttributeSelector extends SimpleSelector {
 
     if (!test) {
       // HasAttribute
-      this.match = node => !!node[attribute];
+      this.match = (node) => {
+        if (!node || !node.attributes) return false;
+        return !isNullOrUndefined(getNodeAttrVal(node, attribute));
+      };
       return;
     }
 
     if (!value) {
       this.match = () => false;
-    }
-
-    const escapedValue = value.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, '\\$&');
-    let regexp = null;
-    switch (test) {
-      case '^=': // PrefixMatch
-        regexp = new RegExp(`^${escapedValue}`);
-        break;
-      case '$=': // SuffixMatch
-        regexp = new RegExp(`${escapedValue}$`);
-        break;
-      case '*=': // SubstringMatch
-        regexp = new RegExp(escapedValue);
-        break;
-      case '=': // Equals
-        regexp = new RegExp(`^${escapedValue}$`);
-        break;
-      case '~=': // Includes
-        if (/\s/.test(value)) {
-          this.match = () => false;
-          return;
-        }
-        regexp = new RegExp(`(^|\\s)${escapedValue}(\\s|$)`);
-        break;
-      case '|=': // DashMatch
-        regexp = new RegExp(`^${escapedValue}(-|$)`);
-        break;
-      default:
-        break;
-    }
-
-    if (regexp) {
-      this.match = node => regexp.test(`${node[attribute]}`);
       return;
     }
-    this.match = () => false;
+
+    this.match = (node) => {
+      if (!node || !node.attributes) return false;
+      // const escapedValue = value.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, '\\$&');
+      const attr = `${getNodeAttrVal(node, attribute)}`;
+
+      if (test === '=') {
+        // Equals
+        return attr === value;
+      }
+
+      if (test === '^=') {
+        // PrefixMatch
+        return attr.startsWith(value);
+      }
+
+      if (test === '$=') {
+        // SuffixMatch
+        return attr.endsWith(value);
+      }
+
+      if (test === '*=') {
+        // SubstringMatch
+        return attr.indexOf(value) !== -1;
+      }
+
+      if (test === '~=') {
+        // Includes
+        const words = attr.split(' ');
+        return words && words.indexOf(value) !== -1;
+      }
+
+      if (test === '|=') {
+        // DashMatch
+        return attr === value || attr.startsWith(`${value}-`);
+      }
+      return false;
+    };
   }
 
   toString() {
-    return `[${this.attribute}${this.test}${(this.test && this.value) || ''}]${this.combinator}`;
+    return `[${this.attribute}${wrap(this.test)}${(this.test && this.value) || ''}]${wrap(this.combinator)}`;
   }
 
   match() {
@@ -295,6 +364,10 @@ class InvalidSelector extends SimpleSelector {
   lookupSort() {
     return null;
   }
+
+  removeSort() {
+    return null;
+  }
 }
 
 class ChildGroup {
@@ -304,6 +377,7 @@ class ChildGroup {
   }
 
   match(node) {
+    if (!node) return false;
     const pass = this.selectors.every((sel, i) => {
       if (i !== 0) {
         node = node.parentNode;
@@ -314,6 +388,7 @@ class ChildGroup {
   }
 
   mayMatch(node) {
+    if (!node) return false;
     const pass = this.selectors.every((sel, i) => {
       if (i !== 0) {
         node = node.parentNode;
@@ -343,6 +418,7 @@ class SiblingGroup {
   }
 
   match(node) {
+    if (!node) return false;
     const pass = this.selectors.every((sel, i) => {
       if (i !== 0) {
         node = node.nextSibling;
@@ -353,6 +429,7 @@ class SiblingGroup {
   }
 
   mayMatch(node) {
+    if (!node) return false;
     const pass = this.selectors.every((sel, i) => {
       if (i !== 0) {
         node = node.nextSibling;
@@ -381,26 +458,40 @@ class SiblingGroup {
 class Selector extends SelectorCore {
   constructor(selectors) {
     super();
-    const supportedCombinator = [undefined, ' ', '>', '+'];
-    let siblingGroup;
-    let lastGroup;
+    const supportedCombinator = [undefined, ' ', '>', '+', '~'];
+    let siblingGroup = [];
+    let lastGroup = [];
     const groups = [];
-    selectors.reverse().forEach((sel) => {
+    const selectorList = [...selectors];
+    const length = selectorList.length - 1;
+    this.specificity = 0;
+    this.dynamic = false;
+
+    for (let i = length; i >= 0; i--) {
+      const sel = selectorList[i];
       if (supportedCombinator.indexOf(sel.combinator) === -1) {
+        console.error(`Unsupported combinator "${sel.combinator}".`);
         throw new Error(`Unsupported combinator "${sel.combinator}".`);
       }
+
       if (sel.combinator === undefined || sel.combinator === ' ') {
-        groups.push(lastGroup = [siblingGroup = []]);
+        groups.push(lastGroup = [(siblingGroup = [])]);
       }
       if (sel.combinator === '>') {
-        lastGroup.push(siblingGroup = []);
+        lastGroup.push((siblingGroup = []));
       }
+
+      this.specificity += sel.specificity;
+
+      if (sel.dynamic) {
+        this.dynamic = true;
+      }
+
       siblingGroup.push(sel);
-    });
-    this.groups = groups.map(g => new Selector.ChildGroup(g.map(sg => new Selector.SiblingGroup(sg))));
-    this.last = selectors[0];
-    this.specificity = selectors.reduce((sum, sel) => sel.specificity + sum, 0);
-    this.dynamic = selectors.some(sel => sel.dynamic);
+    }
+
+    this.groups = groups.map(g => new ChildGroup(g.map(sg => new SiblingGroup(sg))));
+    this.last = selectorList[length];
   }
 
   toString() {
@@ -408,6 +499,7 @@ class Selector extends SelectorCore {
   }
 
   match(node) {
+    if (!node) return false;
     return this.groups.every((group, i) => {
       if (i === 0) {
         node = group.match(node);
@@ -425,6 +517,10 @@ class Selector extends SelectorCore {
 
   lookupSort(sorter) {
     this.last.lookupSort(sorter, this);
+  }
+
+  removeSort(sorter) {
+    this.last.removeSort(sorter, this);
   }
 
   accumulateChanges(node, map) {
@@ -452,7 +548,7 @@ class Selector extends SelectorCore {
       return false;
     });
 
-    // Calculating the right bounds for each selectors won't save much
+    // Calculating the right bounds for each selector won't save much
     if (!mayMatch) {
       return false;
     }
@@ -467,12 +563,12 @@ class Selector extends SelectorCore {
         continue;
       }
       const bound = bounds[i];
-      let leftBound = bound.left;
+      let node = bound.left;
       do {
-        if (group.mayMatch(leftBound)) {
-          group.trackChanges(leftBound, map);
+        if (group.mayMatch(node)) {
+          group.trackChanges(node, map);
         }
-      } while ((leftBound !== bound.right) && (leftBound = node.parentNode));
+      } while ((node !== bound.right) && (node = node.parentNode));
     }
 
     return mayMatch;
@@ -485,11 +581,12 @@ Selector.SiblingGroup = SiblingGroup;
  * Rule Set
  */
 class RuleSet {
-  constructor(selectors, declarations) {
+  constructor(selectors, declarations, hash) {
     selectors.forEach((sel) => {
-      sel.ruleSet = this;                    // FIXME: It makes circular dependency
+      sel.ruleSet = this; // FIXME: It makes circular dependency
       return null;
     });
+    this.hash = hash;
     this.selectors = selectors;
     this.declarations = declarations;
   }
@@ -502,6 +599,10 @@ class RuleSet {
 
   lookupSort(sorter) {
     this.selectors.forEach(sel => sel.lookupSort(sorter));
+  }
+
+  removeSort(sorter) {
+    this.selectors.forEach(sel => sel.removeSort(sorter));
   }
 }
 

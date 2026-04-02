@@ -20,21 +20,22 @@
  * limitations under the License.
  */
 
-#import "HippyView.h"
-
 #import <UIKit/UIKit.h>
 
 #import "HippyBorderStyle.h"
 #import "HippyComponent.h"
 #import "HippyPointerEvents.h"
 
-
-
 @protocol HippyAutoInsetsProtocol;
 
-@class HippyView;
+@class HippyGradientObject;
+@class HippyBridge;
 
 @interface HippyView : UIView
+
+- (instancetype)initWithBridge:(HippyBridge *)bridge;
+
+@property (nonatomic, weak) HippyBridge *bridge;
 
 /**
  * Used to control how touch events are processed.
@@ -66,6 +67,7 @@
  */
 @property (nonatomic, assign) BOOL removeClippedSubviews;
 
+@property (nonatomic, assign) CGFloat shadowSpread;
 /**
  * Hide subviews if they are outside the view bounds.
  * This is an optimisation used predominantly with RKScrollViews
@@ -73,6 +75,19 @@
  * removeClippedSubviews set to YES
  */
 - (void)updateClippedSubviews;
+
+/**
+ * get content for layer
+ * return YES if getting content synchronized,else return NO
+ */
+- (BOOL)getLayerContentForColor:(UIColor *)color completionBlock:(void (^)(UIImage *))contentBlock;
+
+/**
+ * CALayerContents Filter
+ * Default is kCAFilterLinear for minificationFilter and kCAFilterNearest for magnificationFilter
+ */
+- (CALayerContentsFilter)minificationFilter;
+- (CALayerContentsFilter)magnificationFilter;
 
 /**
  * Border radii.
@@ -106,8 +121,12 @@
  */
 @property (nonatomic, assign) HippyBorderStyle borderStyle;
 
+/**
+ * BackgroundImage styles.
+ */
 @property (nonatomic, strong) NSString *backgroundImageUrl;
+@property (nonatomic, strong) NSString *backgroundSize;
 @property (nonatomic, assign) CGFloat backgroundPositionX;
 @property (nonatomic, assign) CGFloat backgroundPositionY;
-
+@property (nonatomic, strong) HippyGradientObject *gradientObject;
 @end

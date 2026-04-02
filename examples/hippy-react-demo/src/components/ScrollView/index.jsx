@@ -4,7 +4,7 @@ import {
   ScrollView,
   Text,
   StyleSheet,
-} from 'hippy-react';
+} from '@hippy/react';
 
 const styles = StyleSheet.create({
   itemStyle: {
@@ -12,6 +12,7 @@ const styles = StyleSheet.create({
     height: 100,
     lineHeight: 100,
     borderWidth: 1,
+    borderStyle: 'solid',
     borderColor: '#4c9afa',
     fontSize: 80,
     margin: 20,
@@ -24,12 +25,14 @@ const styles = StyleSheet.create({
     margin: 20,
     borderColor: '#eee',
     borderWidth: 1,
+    borderStyle: 'solid',
   },
   itemTitle: {
     alignItems: 'flex-start',
     justifyContent: 'center',
     height: 40,
     borderWidth: 1,
+    borderStyle: 'solid',
     borderColor: '#e0e0e0',
     borderRadius: 2,
     backgroundColor: '#fafafa',
@@ -45,7 +48,17 @@ export default function ScrollExpo() {
         <Text>Horizontal ScrollView</Text>
       </View>
       <View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <ScrollView
+            horizontal={true}
+            bounces={true}
+            showsHorizontalScrollIndicator={false} // only iOS support
+            showScrollIndicator={false} // only Android support
+            onScroll={params => console.log('onScroll', params)}
+            onMomentumScrollBegin={params => console.log('onMomentumScrollBegin', params)}
+            onMomentumScrollEnd={params => console.log('onMomentumScrollEnd', params)}
+            onScrollBeginDrag={params => console.log('onScrollBeginDrag', params)}
+            onScrollEndDrag={params => console.log('onScrollEndDrag', params)}
+        >
           <Text style={styles.itemStyle}>A</Text>
           <Text style={styles.itemStyle}>B</Text>
           <Text style={styles.itemStyle}>C</Text>
@@ -59,9 +72,11 @@ export default function ScrollExpo() {
         <Text>Vertical ScrollView</Text>
       </View>
       <ScrollView
+        bounces={true}
         horizontal={false}
         style={styles.verticalScrollView}
-        showsVerticalScrollIndicator={false}
+        showScrollIndicator={false} // only Android support
+        showsVerticalScrollIndicator={false} // only iOS support
       >
         <Text style={styles.itemStyle}>A</Text>
         <Text style={styles.itemStyle}>B</Text>

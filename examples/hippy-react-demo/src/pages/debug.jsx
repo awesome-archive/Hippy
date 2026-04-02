@@ -4,9 +4,10 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  TextInput,
   Text,
   View,
-} from 'hippy-react';
+} from '@hippy/react';
 
 const styles = StyleSheet.create({
   stepText: {
@@ -16,7 +17,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    flexDirection: 'column',
     padding: 20,
   },
   button: {
@@ -37,6 +39,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
     justifyContent: 'center',
+  },
+  inputStyle: {
+    width: 300,
+    marginVertical: 15,
+    placeholderTextColor: '#aaaaaa',
+    fontSize: 16,
+    color: '#242424',
+    height: 30,
+    lineHeight: 30,
+  },
+  bundleInputRow: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
   },
 });
 
@@ -60,14 +78,10 @@ export default class Debug extends Component {
     ];
     if (Platform.OS === 'android') {
       stepTextArray.unshift('1. 使用 USB 线连接 Android 手机和电脑，并启动 Hippy');
-      stepTextArray.push(
-        '6. 打开 chrome://inspect，需要确保 localhost:38989 在 Discover network targets 右侧的 Configuration 弹窗中，下方会出现设备列表，点击 Inspect 进行调试',
-      );
+      stepTextArray.push('6. 打开 chrome://inspect，需要确保 localhost:38989 在 Discover network targets 右侧的 Configuration 弹窗中，下方会出现设备列表，点击 Inspect 进行调试');
     } else if (Platform.OS === 'ios') {
       stepTextArray.unshift('1. 启动 iOS 模拟器并启动打开 HippyDemo');
-      stepTextArray.push(
-        '6. 打开 Safari -> Develop 菜单进行调试（需要在预置 -> 高级里打开开发者菜单）',
-      );
+      stepTextArray.push('6. 打开 Safari -> Develop 菜单进行调试（需要在预置 -> 高级里打开开发者菜单）');
       stepTextArray.push('注意：每次插拔 USB 线后都需要通过 npm run hippy:debug 重启调试服务');
     }
     // eslint-disable-next-line react/no-array-index-key
@@ -75,9 +89,13 @@ export default class Debug extends Component {
     return (
       <ScrollView style={styles.container}>
         {renderSteps()}
+        <TextInput
+          editable={false}
+          style={styles.inputStyle}
+          defaultValue="BundleUrl: localhost:38989/index.bundle"></TextInput>
         <View style={styles.buttonContainer}>
           <View style={styles.button} onClick={this.clickToDebug}>
-            <Text style={styles.buttonText} numberOfLines={1}>点击调试</Text>
+            <Text style={styles.buttonText} numberOfLines={1}>本地调试</Text>
           </View>
         </View>
       </ScrollView>

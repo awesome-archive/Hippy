@@ -6,7 +6,7 @@ import {
   AsyncStorage,
   ScrollView,
   StyleSheet,
-} from 'hippy-react';
+} from '@hippy/react';
 
 const styles = StyleSheet.create({
   containerStyle: {
@@ -19,6 +19,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     borderColor: '#4c9afa',
     borderWidth: 1,
+    borderStyle: 'solid',
     width: 100,
     height: 40,
     justifyContent: 'center',

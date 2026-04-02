@@ -21,11 +21,16 @@
  */
 
 #import "HippyJavaScriptLoader.h"
+#import "HippyComponent.h"
 
 @class HippyBridge;
 @protocol HippyBridgeModule;
 
+
 @protocol HippyBridgeDelegate <NSObject>
+
+
+@optional
 
 /**
  * The location of the JavaScript source file. When running from the packager
@@ -35,7 +40,19 @@
  */
 - (NSURL *)sourceURLForBridge:(HippyBridge *)bridge;
 
-@optional
+- (void)componentWillBePurged:(id<HippyComponent>)component;
+
+/**
+ * Called and inject Object before Hippy execute JS source code
+ * object will be mounted at JS Global Object.
+ */
+- (NSDictionary *)objectsBeforeExecuteCode;
+
+/**
+ * Called and update Object before Hippy execute secondary JS source code. call on HippyBridgeQueue
+ * object will be mounted at JS Global Object.
+ */
+- (NSDictionary *)objectsBeforeExecuteSecondaryCode;
 
 /**
  * The bridge will attempt to load the JS source code from the location specified
@@ -100,15 +117,45 @@
  * location specified by the `sourceURLForBridge:` method, however, if you want
  * to handle loading the JS yourself, you can do so by implementing this method.
  */
-- (void)loadSourceForBridge:(HippyBridge *)bridge
-                 onProgress:(HippySourceLoadProgressBlock)onProgress
-                 onComplete:(HippySourceLoadBlock)loadCallback;
+- (void)loadSourceForBridge:(HippyBridge *)bridge onProgress:(HippySourceLoadProgressBlock)onProgress onComplete:(HippySourceLoadBlock)loadCallback;
 
 /**
  * Similar to loadSourceForBridge:onProgress:onComplete: but without progress
  * reporting.
  */
-- (void)loadSourceForBridge:(HippyBridge *)bridge
-                  withBlock:(HippySourceLoadBlock)loadCallback;
+- (void)loadSourceForBridge:(HippyBridge *)bridge withBlock:(HippySourceLoadBlock)loadCallback;
+
+- (BOOL)dynamicLoad:(HippyBridge *)bridge URI:(NSString *)uri completion:(void (^)(NSString *))completion;
+
+/// When return YES,
+/// it indicates that you want to use the `viewWillTransitionToSize` method in UIViewController
+/// instead of the deprecated UIApplicationDidChangeStatusBarOrientationNotification.
+///
+/// Note that you must call `onHostControllerTransitionedToSize` of HippyRootView when size changed.
+- (BOOL)shouldUseViewWillTransitionMethodToMonitorOrientation;
+
+
+/// The default status bar height when hippy cannot obtained dynamically.
+///
+/// Note: In general, the page layout should not depend on `StatusBar` height,
+/// Its height is dynamically changed and should be obtained dynamically.
+/// This value is only used as a default value if hippy cannot be obtained.
+///
+/// Only for compatibility with old code, strongly discouraged.
+/// return values less than 0 will be treated as 0.
+- (CGFloat)defaultStatusBarHeightNoMatterHiddenOrNot;
+
+
+#pragma mark - DevTools inspector delegate
+
+/**
+ * ask delegate should bridge start a web inspector
+ */
+- (BOOL)shouldStartInspector:(HippyBridge *)bridge;
+
+/**
+ * ask delegate URL for web inspector
+ */
+- (NSURL *)inspectorSourceURLForBridge:(HippyBridge *)bridge;
 
 @end

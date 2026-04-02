@@ -1,27 +1,47 @@
+/*
+ * Tencent is pleased to support the open source community by making
+ * Hippy available.
+ *
+ * Copyright (C) 2017-2019 THL A29 Limited, a Tencent company.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 /* eslint-disable no-underscore-dangle */
 
 import React from 'react';
-import Style from '@localTypes/style';
-import View from './view';
-import * as StyleSheet from '../modules/stylesheet';
-import { HippyEventListener } from '../events';
+import StyleSheet from '../modules/stylesheet';
+import { HippyEventListener } from '../event';
 import { Device } from '../native';
+import { Platform } from '../types';
+import View from './view';
 
-type ModalOrientation = 'portrait' | 'portrait-upside-down' | 'landscape' | 'landscape-left' | 'landscape-right';
+export type ModalOrientation = 'portrait' | 'portrait-upside-down' | 'landscape' | 'landscape-left' | 'landscape-right';
 
-interface ModalProps {
+export interface ModalProps {
   /**
    * Show or hide
    *
-   * Default false
+   * Default true
    */
-  visible: boolean;
+  visible?: boolean;
 
   /**
    * Primary key
    * > iOS only
    */
-  primaryKey: string;
+  primaryKey?: string;
 
   /**
    * Background is transparent or not
@@ -71,33 +91,34 @@ interface ModalProps {
    */
   supportedOrientations?: ModalOrientation[];
 
-  style?: Style;
+  style?: HippyTypes.StyleProp;
 
   /**
    * Trigger when hardware button pressed
    * > Android Only
    */
-  onRequestClose?(): void;
+  onRequestClose?: () => void;
 
   /**
    * Trigger when the Modal will show
    */
-  onShow?(): void;
+  onShow?: () => void;
 
   /**
    * Trigger when the Modal will hide
    */
-  onDismiss?(): void;
+  onDismiss?: () => void;
 
   /**
    * Trigger when the device orientation changed.
    */
-  onOrientationChange?(): void;
+  onOrientationChange?: () => void;
 }
 
 const styles = StyleSheet.create({
   modal: {
     position: 'absolute',
+    collapsable: false,
   },
   container: {
     position: 'absolute',
@@ -110,13 +131,15 @@ const styles = StyleSheet.create({
  * The Modal component is a basic way to present content above an enclosing view.
  * @noInheritDoc
  */
-class Modal extends React.Component<ModalProps, {}> {
+export class Modal extends React.Component<ModalProps, {}> {
+  private static defaultProps = {
+    visible: true,
+  };
   private eventSubscription: null | HippyEventListener;
-
   /**
    * @ignore
    */
-  constructor(props: ModalProps) {
+  public constructor(props: ModalProps) {
     super(props);
     this.eventSubscription = null;
   }
@@ -125,7 +148,7 @@ class Modal extends React.Component<ModalProps, {}> {
    * @ignore
    */
   public componentDidMount() {
-    if (Device.platform.OS === 'ios') {
+    if (Device.platform.OS === Platform.ios) {
       this.eventSubscription = new HippyEventListener('modalDismissed');
       this.eventSubscription.addCallback((params: any) => {
         const { primaryKey, onDismiss } = this.props;
@@ -140,7 +163,7 @@ class Modal extends React.Component<ModalProps, {}> {
    * @ignore
    */
   public componentWillUnmount() {
-    if (Device.platform.OS === 'ios') {
+    if (Device.platform.OS === Platform.ios) {
       if (this.eventSubscription) {
         this.eventSubscription.unregister();
       }
@@ -163,11 +186,9 @@ class Modal extends React.Component<ModalProps, {}> {
     if (visible === false) {
       return null;
     }
-
     const containerStyles = {
       backgroundColor: transparent ? 'transparent' : 'white',
     };
-
     if (!animationType) {
       // manually setting default prop here to keep support for the deprecated 'animated' prop
       animationType = 'none';
@@ -181,6 +202,7 @@ class Modal extends React.Component<ModalProps, {}> {
         nativeName="Modal"
         animationType={animationType}
         transparent={transparent}
+        // @ts-ignore
         style={styles.modal}
         {...this.props}
       >
@@ -191,12 +213,5 @@ class Modal extends React.Component<ModalProps, {}> {
     );
   }
 }
-
-/**
-* @ignore
-*/
-Modal.defaultProps = {
-  visible: true,
-};
 
 export default Modal;

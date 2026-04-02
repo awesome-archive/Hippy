@@ -1,0 +1,39 @@
+name: '[front-end] build tests'
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - 'packages/**'
+      - 'package*.json'
+      - 'examples/hippy-*-demo/**'
+      - 'scripts/**'
+      - 'core/js/**'
+
+jobs:
+  frontend_build_tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [ 16.x, 17.x ]
+    steps:
+      - uses: actions/checkout@v3
+      - name: setup-node
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node }}
+          registry-url: https://npm.pkg.github.com
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+      - name: install
+        run: |
+          npm install && npx lerna bootstrap --no-ci
+      - name: lint & build
+        run: npm run lint & npm run build
+      - name: test
+        run: npm run test:jest && npm run coverage
+      - name: coverage
+        if: matrix.node == '16.x'
+        uses: codecov/codecov-action@v2

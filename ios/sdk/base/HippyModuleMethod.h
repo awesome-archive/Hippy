@@ -27,12 +27,7 @@
 
 @class HippyBridge;
 
-@interface HippyMethodArgument : NSObject
-
-@property (nonatomic, copy, readonly) NSString *type;
-@property (nonatomic, readonly) HippyNullability nullability;
-@property (nonatomic, readonly) BOOL unused;
-
+@interface HippyMethodArgument : NSObject<HippyBridgeArgument>
 @end
 
 @interface HippyModuleMethod : NSObject <HippyBridgeMethod>
@@ -41,7 +36,7 @@
 @property (nonatomic, readonly) SEL selector;
 
 - (instancetype)initWithMethodSignature:(NSString *)objCMethodName
-                          JSMethodName:(NSString *)JSMethodName
-                           moduleClass:(Class)moduleClass NS_DESIGNATED_INITIALIZER;
+                           JSMethodName:(NSString *)JSMethodName
+                            moduleClass:(Class)moduleClass NS_DESIGNATED_INITIALIZER;
 
 @end

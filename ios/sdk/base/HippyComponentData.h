@@ -36,14 +36,10 @@
 @property (nonatomic, copy, readonly) NSString *name;
 @property (nonatomic, weak, readonly) HippyViewManager *manager;
 
-- (instancetype)initWithManagerClass:(Class)managerClass
-                              bridge:(HippyBridge *)bridge NS_DESIGNATED_INITIALIZER;
+- (instancetype)initWithManagerClass:(Class)managerClass bridge:(HippyBridge *)bridge NS_DESIGNATED_INITIALIZER;
 
 - (UIView *)createViewWithTag:(NSNumber *)tag;
 
-/**
- 为了让view在初始化的时候获取属性 mttrn:pennyli
- */
 - (UIView *)createViewWithTag:(NSNumber *)tag initProps:(NSDictionary *)props;
 
 - (HippyShadowView *)createShadowViewWithTag:(NSNumber *)tag;

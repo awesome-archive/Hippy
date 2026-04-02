@@ -1,0 +1,75 @@
+#####################################################
+#
+# List of approvers for Hippy
+#
+#####################################################
+#
+# Learn about CODEOWNERS file format:
+#  https://help.github.com/en/articles/about-code-owners
+#
+
+# universal files
+* @ilikethese @etkmao
+
+# cmake related
+*.cmake @ilikethese @etkmao
+CMakeLists.txt @ilikethese @etkmao
+
+# driver: js
+/.eslintignore @zealotchen0
+/.eslintrc.js @zealotchen0
+/.nycrc @zealotchen0
+/package.json @zealotchen0
+/package-lock.json @zealotchen0
+/ava.config.js @zealotchen0
+/core/ @ilikethese @etkmao
+/core/js/ @zealotchen0
+/packages/ @zealotchen0
+/packages/hippy-web-renderer/ @pba-cra @zealotchen0
+
+# framework: android
+/android/ @siguangli
+/android/**/src/main/jni/ @ilikethese @etkmao
+
+# framework: ios
+/ios/ @wwwcg @ruifanyuan
+
+# dom: layout
+/layout/ @ilikethese
+
+# gh: config
+/.github/ @zealotchen0
+
+# doc: example
+/examples/ @zealotchen0
+/examples/hippy-*-demo/ @zealotchen0
+/examples/android-demo/ @siguangli
+/examples/android-demo/res/ @zealotchen0
+/examples/ios-demo/ @wwwcg @ruifanyuan
+/examples/ios-demo/res/ @zealotchen0
+/static/ @zealotchen0
+
+# doc: pages
+/*.md @zealotchen0
+/docs/ @zealotchen0
+
+# build: gradle
+/gradle.properties @siguangli
+/gradlew @siguangli
+/gradlew.bat @siguangli
+/settings.gradle @siguangli
+/build.gradle @siguangli
+/gradle/ @siguangli
+
+# build: xcode
+/hippy.podspec @wwwcg @ruifanyuan
+/_Pods.xcodeproj/ @wwwcg @ruifanyuan
+
+# build: config
+/buildconfig/ @ilikethese @etkmao
+
+# build: js
+/tsdoc.json @zealotchen0
+/tsconfig.json @zealotchen0
+/lerna.json @zealotchen0
+/scripts/ @zealotchen0

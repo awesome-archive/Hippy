@@ -26,7 +26,11 @@
 
 #import "HippyBridgeModule.h"
 #import "HippyInvalidating.h"
-#include "engine-impl.h"
+
+#ifdef __cplusplus
+#include <memory>
+class Scope;
+#endif
 
 typedef void (^HippyJavaScriptCompleteBlock)(NSError *error);
 typedef void (^HippyJavaScriptCallback)(id result, NSError *error);
@@ -37,6 +41,7 @@ typedef void (^HippyJavaScriptCallback)(id result, NSError *error);
  */
 @protocol HippyJavaScriptExecutor <HippyInvalidating, HippyBridgeModule>
 
+- (instancetype)initWithExecurotKey:(NSString *)execurotkey bridge:(HippyBridge *)bridge;
 /**
  * Used to set up the executor after the bridge has been fully initialized.
  * Do any expensive setup in this method instead of `-init`.
@@ -48,34 +53,48 @@ typedef void (^HippyJavaScriptCallback)(id result, NSError *error);
  */
 @property (nonatomic, readonly, getter=isValid) BOOL valid;
 
-/*
- *hippy-core js engine
- */
-@property (nonatomic, assign) std::weak_ptr<Engine> pEngine;
-@property (nonatomic, assign) std::weak_ptr<Environment> pEnv;
-@property (nonatomic, assign) hippy::napi::napi_context napi_ctx;
+@property (nonatomic, copy) NSString *executorkey;
+
+#ifdef __cplusplus
+@property (atomic, assign) std::shared_ptr<Scope> pScope;
+#endif
+
+
+/// hippy-core js engine
 @property (readonly) JSGlobalContextRef JSGlobalContextRef;
-/**
- * Executes BatchedBridge.flushedQueue on JS thread and calls the given callback
- * with JSValue, containing the next queue, and JSContext.
- */
+
+/// Executes BatchedBridge.flushedQueue on JS thread and calls the given callback
+/// with JSValue, containing the next queue, and JSContext.
+///
+/// - Parameter onComplete: callback
 - (void)flushedQueue:(HippyJavaScriptCallback)onComplete;
 
-/**
- * Executes BatchedBridge.callFunctionReturnFlushedQueue with the module name,
- * method name and optional additional arguments on the JS thread and calls the
- * given callback with JSValue, containing the next queue, and JSContext.
- */
-- (void)callFunctionOnModule:(NSString *)module
+/// Controls whether this JSContext is inspectable in Web Inspector. iOS 16.4 added
+/// - Parameter inspectable: bool value
+- (void)setInspectable:(BOOL)inspectable;
+
+/// called when second bundle load
+/// - Parameter success: load result
+- (void)secondBundleLoadCompleted:(BOOL)success;
+
+/// called before excute secondary js bundle
+- (void)updateGlobalObjectBeforeExcuteSecondary;
+
+/// Updated hippy global info
+/// - Parameter dict: updated info
+- (void)updateNativeInfoToHippyGlobalObject:(NSDictionary *)dict;
+
+/// Executes BatchedBridge.callFunctionReturnFlushedQueue with the module name,
+/// method name and optional additional arguments on the JS thread and calls the
+/// given callback with JSValue, containing the next queue, and JSContext.
+- (void)callFunctionOnModule:(NSString *)moduleName
                       method:(NSString *)method
                    arguments:(NSArray *)args
                     callback:(HippyJavaScriptCallback)onComplete;
 
-/**
- * Executes BatchedBridge.invokeCallbackAndReturnFlushedQueue with the cbID,
- * and optional additional arguments on the JS thread and calls the
- * given callback with JSValue, containing the next queue, and JSContext.
- */
+/// Executes BatchedBridge.invokeCallbackAndReturnFlushedQueue with the cbID,
+/// and optional additional arguments on the JS thread and calls the
+/// given callback with JSValue, containing the next queue, and JSContext.
 - (void)invokeCallbackID:(NSNumber *)cbID
                arguments:(NSArray *)args
                 callback:(HippyJavaScriptCallback)onComplete;
@@ -85,6 +104,7 @@ typedef void (^HippyJavaScriptCallback)(id result, NSError *error);
  */
 - (void)executeApplicationScript:(NSData *)script
                        sourceURL:(NSURL *)sourceURL
+                  isCommonBundle:(BOOL)isCommonBundle
                       onComplete:(HippyJavaScriptCompleteBlock)onComplete;
 
 - (void)injectJSONText:(NSString *)script

@@ -1,33 +1,8 @@
-const path              = require('path');
-const replace           = require('rollup-plugin-replace');
-const alias             = require('rollup-plugin-alias');
-const node              = require('rollup-plugin-node-resolve');
-const commonjs          = require('rollup-plugin-commonjs');
-const typescript        = require('@wessberg/rollup-plugin-ts');
-
-const hippyReactPackage = require('../packages/hippy-react/package.json');
-const hippyReactWebPackage = require('../packages/hippy-react-web/package.json');
-
-const aliases = {
-  '@localTypes': path.resolve('./types'),
-};
-
-function banner(name, version) {
-  const startYear = 2017;
-  const thisYear = new Date().getFullYear();
-  let copyRightYears = thisYear;
-  if (startYear !== thisYear) {
-    copyRightYears = `${startYear}-${thisYear}`;
-  }
-
-  return `/*!
- * ${name} v${version}
- * Build at: ${new Date()}
- *
+/*
  * Tencent is pleased to support the open source community by making
  * Hippy available.
  *
- * Copyright (C) ${copyRightYears} THL A29 Limited, a Tencent company.
+ * Copyright (C) 2017-2022 THL A29 Limited, a Tencent company.
  * All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,63 +17,80 @@ function banner(name, version) {
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-`;
-}
+
+const path = require('path');
+const typescript = require('rollup-plugin-typescript2');
+const replace = require('@rollup/plugin-replace');
+const { nodeResolve } = require('@rollup/plugin-node-resolve');
+const commonjs = require('@rollup/plugin-commonjs');
+const hippyReactPackage = require('../packages/hippy-react/package.json');
+const { banner, resolvePackage, getDtsConfig } = require('./utils');
 
 const builds = {
-  'hippy-react': {
-    entry: './packages/hippy-react/src/index.ts',
-    dest: './packages/hippy-react/dist/index.js',
+  '@hippy/react': {
+    entry: resolvePackage('hippy-react', 'src/index.ts'),
+    dest: resolvePackage('hippy-react', 'dist/index.js'),
     format: 'es',
-    banner: banner('hippy-react', hippyReactPackage.version),
+    banner: banner('@hippy/react', hippyReactPackage.version),
     external(id) {
       return !![
         'react',
         'react-reconciler',
-      ].find(ext => id.startsWith(ext));
-    },
-  },
-  'hippy-react-web': {
-    entry: './packages/hippy-react-web/src/index.ts',
-    dest: './packages/hippy-react-web/dist/index.js',
-    format: 'es',
-    banner: banner('hippy-react-web', hippyReactWebPackage.version),
-    external(id) {
-      return !![
-        'react',
-        'react-dom',
-        'bezier-easing',
-        'debounce',
-        'swiper',
+        '@hippy/react-reconciler',
       ].find(ext => id.startsWith(ext));
     },
   },
 };
+builds.declaration = getDtsConfig({
+  ...builds['@hippy/react'],
+  fixHippyTypes: true,
+});
 
 function genConfig(name) {
   const opts = builds[name];
+  // declaration
+  if (name === 'declaration') {
+    return opts;
+  }
   const config = {
     input: opts.entry,
     external: opts.external,
     plugins: [
       replace({
-        'process.env.HIPPY_REACT_VERSION': `"${hippyReactPackage.version}"`,
+        preventAssignment: true,
+        values: {
+          'process.env.HIPPY_REACT_VERSION': `"${hippyReactPackage.version}"`,
+        },
       }),
-      typescript({
-        transpileOnly: true,
-      }),
-      node(),
+      nodeResolve(),
       commonjs(),
-      alias({
-        resolve: ['.ts', '.tsx'],
-        ...aliases,
+      typescript({
+        tsconfig: path.resolve(__dirname, '../tsconfig.json'),
+        tsconfigOverride: {
+          compilerOptions: {
+            declaration: false,
+          },
+          exclude: ['**/__tests__/*.test.*'],
+          include: [
+            'packages/hippy-react/src',
+            'packages/global.d.ts',
+            'node_modules/@types/web/index.d.ts',
+            'node_modules/@types/node/index.d.ts',
+          ],
+        },
       }),
     ].concat(opts.plugins || []),
-    output: {
+    output: opts?.output ? opts.output : {
+      name,
       file: opts.dest,
       format: opts.format,
       banner: opts.banner,
-      name,
+      exports: 'auto',
+    },
+    onwarn: opts?.onwarn ? opts.onwarn : (msg, warn) => {
+      if (!/Circular/.test(msg)) {
+        warn(msg);
+      }
     },
   };
 

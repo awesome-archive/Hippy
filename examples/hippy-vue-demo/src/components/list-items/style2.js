@@ -1,15 +1,15 @@
 import Vue from 'vue';
 
-Vue.component('style-two', {
+export default Vue.component('StyleTwo', {
   inheritAttrs: false,
   props: ['itemBean'],
   template: `
   <div class="list-view-item style-two">
     <div class="style-two-left-container">
-      <p class="article-title" numberOfLines="2" enableScale="true">
+      <p class="article-title" :numberOfLines="2" :enableScale="true">
         {{ itemBean.title }}
       </p>
-      <div class="tag-line">
+      <div :style="{ alignSelf: 'flex-start', marginTop: '5px' }">
         <p class="normal-text">
           {{ itemBean.subInfo.join('') }}
         </p>

@@ -15,213 +15,128 @@
  */
 package com.tencent.mtt.hippy.devsupport;
 
-import android.text.TextUtils;
-
+import android.os.Handler;
+import android.os.Looper;
 import com.tencent.mtt.hippy.utils.LogUtils;
 import com.tencent.mtt.hippy.websocket.WebSocketClient;
-import org.json.JSONObject;
 
-import java.io.IOException;
 import java.net.URI;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * A wrapper around WebSocketClient that recognizes debugging message format.
- */
-public class DebugWebSocketClient implements WebSocketClient.WebSocketListener
-{
+@SuppressWarnings("unused")
+public class DebugWebSocketClient implements WebSocketClient.WebSocketListener {
 
-	private static final String										TAG			= "JSDebuggerWebSocketClient";
-	private final AtomicInteger										mRequestID	= new AtomicInteger();
-	private final ConcurrentHashMap<Integer, JSDebuggerCallback>	mCallbacks	= new ConcurrentHashMap<>();
-	WebSocketClient													mWebSocket;
-	private JSDebuggerCallback										mConnectCallback;
+  private final ConcurrentHashMap<Integer, JSDebuggerCallback> mCallbacks = new ConcurrentHashMap<>();
+  WebSocketClient mWebSocket;
+  private JSDebuggerCallback mConnectCallback;
+  private Handler mHandler;
+  private DevRemoteDebugProxy.OnReceiveDataListener mReceiveDataListener;
+  private static final int RECONNECT_TIME_DELAY = 3000;
+  private final Runnable mReconnectRunnable = new Runnable() {
+    @Override
+    public void run() {
+      if (mWebSocket == null || mWebSocket.isConnected()) {
+        return;
+      }
+      mWebSocket.connect();
+    }
+  };
 
-	private DevRemoteDebugProxy.OnReceiveDataListener				mReceiveDataListener;
+  public void connect(String url, JSDebuggerCallback callback) {
+    mConnectCallback = callback;
+    mWebSocket = new WebSocketClient(URI.create(url), this, null);
+    mWebSocket.connect();
+    mHandler = new Handler(Looper.getMainLooper());
+  }
 
-	public void connect(String url, JSDebuggerCallback callback)
-	{
-		mConnectCallback = callback;
-		mWebSocket = new WebSocketClient(URI.create(url), this, null);
-		mWebSocket.connect();
-	}
+  private void reconnect() {
+    mHandler.removeCallbacks(mReconnectRunnable);
+    mHandler.postDelayed(mReconnectRunnable, RECONNECT_TIME_DELAY);
+  }
 
-	public void setOnReceiveDataCallback(DevRemoteDebugProxy.OnReceiveDataListener l)
-	{
-		mReceiveDataListener = l;
-	}
+  public void setOnReceiveDataCallback(DevRemoteDebugProxy.OnReceiveDataListener l) {
+    mReceiveDataListener = l;
+  }
 
-	/**
-	 * Creates the next JSON message to send to remote JS executor, with request
-	 * ID pre-filled in.
-	 */
-	private JSONObject startMessageObject(int requestID) throws Exception
-	{
-		JSONObject object = new JSONObject();
-		object.put("id", requestID);
-		return object;
-	}
+  public void closeQuietly() {
+    if (mWebSocket != null) {
+      mWebSocket.disconnect();
+    }
+  }
 
-	/**
-	 * Takes in a JsonGenerator created by {@link #startMessageObject} and
-	 * returns the stringified
-	 * JSON
-	 */
-	private String endMessageObject(JSONObject object) throws IOException
-	{
-		String message = object.toString();
-		return message;
-	}
+  public void close(int code, String reason) {
+    if (mWebSocket != null) {
+      mWebSocket.requestClose(code, reason);
+    }
+  }
 
-	public void closeQuietly()
-	{
-		if (mWebSocket != null)
-		{
-			mWebSocket.disconnect();
-		}
-	}
+  public void sendMessage(String message) {
+    if (mWebSocket == null || !mWebSocket.isConnected()) {
+      LogUtils.e("sendMessage", "mWebSocket is null");
+      return;
+    }
+    mWebSocket.send(message);
+  }
 
-	public void sendMessage(String message)
-	{
-		if (mWebSocket == null)
-		{
-			LogUtils.e("sendMessage", "mWebSocket is null");
-			return;
-		}
-		mWebSocket.send(message);
-	}
+  @Override
+  public void onMessage(String message) {
+    mReceiveDataListener.onReceiveData(message);
+  }
 
-	private void triggerRequestFailure(int requestID, Throwable cause)
-	{
-		JSDebuggerCallback callback = mCallbacks.get(requestID);
-		if (callback != null)
-		{
-			mCallbacks.remove(requestID);
-			callback.onFailure(cause);
-		}
-	}
+  @Override
+  public void onMessage(byte[] data) {
 
-	private void triggerRequestSuccess(int requestID, String response)
-	{
-		JSDebuggerCallback callback = mCallbacks.get(requestID);
-		if (callback != null)
-		{
-			mCallbacks.remove(requestID);
-			callback.onSuccess(response);
-		}
-	}
+  }
 
-	private void onJsCallNative(JSONObject object)
-	{
-		if(mReceiveDataListener == null)
-		{
-			throw new RuntimeException("No Reciever Set for Debugger Message");
-		}
+  @Override
+  public void onError(Exception e) {
+    abort(e);
+  }
 
-		String moduleName = object.optString("moduleName");
-		String moduleFunc = object.optString("methodFun");
-		String params = object.optString("params");
-		String callId = object.optString("callbackId");
+  @Override
+  public void onConnect() {
+    if (mConnectCallback != null) {
+      mConnectCallback.onSuccess(null);
+    }
+    mConnectCallback = null;
+  }
 
-		//mReceiveDataListener.onReceiveData( moduleName, moduleFunc, callId, params);
-	}
+  @Override
+  public void onDisconnect(int code, String reason) {
+    LogUtils.d("onDisconnect","code:" + code + ",reason:" + reason);
+    if (mConnectCallback != null) {
+      mConnectCallback.onFailure(new Exception(reason));
+      mConnectCallback = null;
+    }
+    if (code == 0 && (WebSocketClient.DISCONNECT_REASON_EOF.equals(reason)
+            || WebSocketClient.DISCONNECT_REASON_CONNECT.equals(reason))) {
+      reconnect();
+    } else {
+      mWebSocket = null;
+      mHandler.removeCallbacks(mReconnectRunnable);
+    }
+  }
 
-	private void onReplyMessage(JSONObject reply)
-	{
-		Integer replyID = null;
+  private void abort(Throwable cause) {
+    // Trigger failure callbacks
+    if (mConnectCallback != null) {
+      mConnectCallback.onFailure(cause);
+      mConnectCallback = null;
+    }
+    for (JSDebuggerCallback callback : mCallbacks.values()) {
+      callback.onFailure(cause);
+    }
+    mCallbacks.clear();
 
-		try
-		{
-			String result = null;
-			if (reply.has("replyID"))
-			{
-				replyID = reply.getInt("replyID");
-			}
-			if (reply.has("result"))
-			{
-				result = reply.getString("result");
-			}
-			if (reply.has("error"))
-			{
-				String error = reply.getString("error");
-				abort(error, new JavascriptException(error));
-			}
+    closeQuietly();
+  }
 
-			if (replyID != null)
-			{
-				triggerRequestSuccess(replyID, result);
-			}
-		}
-		catch (Exception e)
-		{
-			if (replyID != null)
-			{
-				triggerRequestFailure(replyID, e);
-			}
-			else
-			{
-				abort("Parsing response message from websocket failed", e);
-			}
-		}
-	}
+  public interface JSDebuggerCallback {
 
-	@Override
-	public void onMessage(String message)
-	{
-		mReceiveDataListener.onReceiveData(message);
-		return;
-	}
+    @SuppressWarnings("unused")
+    void onSuccess(String response);
 
-	@Override
-	public void onMessage(byte[] data)
-	{
-
-	}
-
-	@Override
-	public void onError(Exception e)
-	{
-		abort("Websocket exception", e);
-	}
-
-	@Override
-	public void onConnect()
-	{
-		if (mConnectCallback != null)
-		{
-			mConnectCallback.onSuccess(null);
-		}
-		mConnectCallback = null;
-	}
-
-	@Override
-	public void onDisconnect(int code, String reason)
-	{
-		mWebSocket = null;
-	}
-
-	private void abort(String message, Throwable cause)
-	{
-		closeQuietly();
-
-		// Trigger failure callbacks
-		if (mConnectCallback != null)
-		{
-			mConnectCallback.onFailure(cause);
-			mConnectCallback = null;
-		}
-		for (JSDebuggerCallback callback : mCallbacks.values())
-		{
-			callback.onFailure(cause);
-		}
-		mCallbacks.clear();
-	}
-
-	public interface JSDebuggerCallback
-	{
-		void onSuccess(String response);
-
-		void onFailure(Throwable cause);
-	}
+    @SuppressWarnings("unused")
+    void onFailure(Throwable cause);
+  }
 }

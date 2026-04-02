@@ -1,18 +1,36 @@
-/* eslint-disable import/prefer-default-export */
-/* eslint-disable class-methods-use-this */
+/*
+ * Tencent is pleased to support the open source community by making
+ * Hippy available.
+ *
+ * Copyright (C) 2017-2019 THL A29 Limited, a Tencent company.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 /* eslint-disable no-underscore-dangle */
 
 import { looseEqual } from 'shared/util';
-import { isFunction, warn } from '../../../util';
+import { isDev, isFunction, warn } from '../../../util';
 
 class EventEmitter {
   constructor(element) {
     this.element = element;
-    this._observers = {};
+    this.observers = {};
   }
 
   getEventListeners() {
-    return this._observers;
+    return this.observers;
   }
 
   addEventListener(eventNames, callback, options) {
@@ -27,9 +45,9 @@ class EventEmitter {
     const events = eventNames.split(',');
     for (let i = 0, l = events.length; i < l; i += 1) {
       const eventName = events[i].trim();
-      if (process.env.NODE_ENV !== 'production') {
+      if (isDev()) {
         if (['touchStart', 'touchMove', 'touchEnd', 'touchCancel'].indexOf(eventName) !== -1) {
-          warn(`@${eventName} is deprecated because it's not compatible with browser standard, please use @${eventName.toLowerCase()} to instead as soon, supported after hippy-vue 1.3.3`);
+          warn(`@${eventName} is deprecated because it's not compatible with browser standard, please use @${eventName.toLowerCase()} to instead as so on.`);
         }
       }
       const list = this._getEventList(eventName, true);
@@ -38,7 +56,7 @@ class EventEmitter {
         options,
       });
     }
-    return this._observers;
+    return this.observers;
   }
 
   removeEventListener(eventNames, callback, options) {
@@ -61,20 +79,19 @@ class EventEmitter {
             list.splice(index, 1);
           }
           if (list.length === 0) {
-            delete this._observers[eventName];
+            this.observers[eventName] = undefined;
           }
         }
       } else {
-        this._observers[eventName] = undefined;
-        delete this._observers[eventName];
+        this.observers[eventName] = undefined;
       }
     }
-    return this._observers;
+    return this.observers;
   }
 
   emit(eventInstance) {
     const { type: eventName } = eventInstance;
-    const observers = this._observers[eventName];
+    const observers = this.observers[eventName];
     if (!observers) {
       return;
     }
@@ -92,12 +109,11 @@ class EventEmitter {
   }
 
   _getEventList(eventName, createIfNeeded) {
-    let list = this._observers[eventName];
+    let list = this.observers[eventName];
     if (!list && createIfNeeded) {
       list = [];
-      this._observers[eventName] = list;
+      this.observers[eventName] = list;
     }
-
     return list;
   }
 

@@ -13,186 +13,169 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.tencent.mtt.hippy.adapter.http;
 
 import android.os.Build;
+
+import androidx.annotation.Nullable;
+
+import com.tencent.mtt.hippy.common.HippyArray;
+import com.tencent.mtt.hippy.common.HippyMap;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/**
- * Copyright (C) 2005-2020 TENCENT Inc.All Rights Reserved.
- * FileName: HippyHttpRequest
- * Description：
- * History：
- */
-public class HippyHttpRequest
-{
-	public static final int		DEFAULT_TIMEOUT_MS			= 3000;
+@SuppressWarnings({"unused"})
+public class HippyHttpRequest {
 
-	private static String		USER_AGENT					= null;
-	private int					mConnectTimeout				= DEFAULT_TIMEOUT_MS;
-	private int					mReadTimeout				= DEFAULT_TIMEOUT_MS;
-	private Map<String, Object>	mHeaderMap;
-	private String				mUrl;
-	private boolean				mUseCaches					= true;
-	private String				mMethod						= "GET";
-	private boolean				mInstanceFollowRedirects	= false;
-	private String				mBody;
+    public static final int DEFAULT_TIMEOUT_MS = 3000;
 
-	public HippyHttpRequest()
-	{
-		mHeaderMap = new HashMap();
-		initUserAgent();
+    private static String USER_AGENT = null;
+    private int mConnectTimeout = DEFAULT_TIMEOUT_MS;
+    private int mReadTimeout = DEFAULT_TIMEOUT_MS;
+    private final Map<String, Object> mHeaderMap;
+    private String mUrl;
+    private boolean mUseCaches = true;
+    private String mMethod = "GET";
+    private boolean mInstanceFollowRedirects = false;
+    private String mBody;
+    @Nullable
+    private HippyMap mInitParams;
+    @Nullable
+    private HippyArray mRequestCookies;
+    @Nullable
+    private Map<String, Object> mNativeParams;
 
-		if (USER_AGENT != null)
-			addHeader(HttpHeader.REQ.USER_AGENT, USER_AGENT);
-		else
-			System.err.println("user_agent is null!");
-	}
+    public HippyHttpRequest() {
+        //noinspection unchecked,rawtypes
+        mHeaderMap = new HashMap();
+        initUserAgent();
 
-	public String getUrl()
-	{
-		return mUrl;
-	}
+        if (USER_AGENT != null) {
+            addHeader(HttpHeader.REQ.USER_AGENT, USER_AGENT);
+        } else {
+            System.err.println("user_agent is null!");
+        }
+    }
 
-	public void setUrl(String url)
-	{
-		this.mUrl = url;
-	}
+    @Nullable
+    public HippyMap getInitParams() {
+        return mInitParams;
+    }
 
-	public void addHeader(String name, String value)
-	{
-		mHeaderMap.put(name, value);
-	}
+    public void setInitParams(@Nullable HippyMap initParams) {
+        mInitParams = initParams;
+    }
 
-	public void addHeader(String name, List<String> value)
-	{
-		mHeaderMap.put(name, value);
-	}
+    @Nullable
+    public HippyArray getRequestCookies() {
+        return mRequestCookies;
+    }
 
-	public Map<String, Object> getHeaders()
-	{
-		return mHeaderMap;
-	}
+    public void setRequestCookies(@Nullable HippyArray requestCookies) {
+        mRequestCookies = requestCookies;
+    }
 
-	public int getConnectTimeout()
-	{
-		return mConnectTimeout;
-	}
+    @Nullable
+    public Map<String, Object> getNativeParams() {
+        return mNativeParams;
+    }
 
-	public void setConnectTimeout(int time)
-	{
-		mConnectTimeout = time;
-	}
+    public void setNativeParams(@Nullable Map<String, Object> nativeParams) {
+        mNativeParams = nativeParams;
+    }
 
-	public int getReadTimeout()
-	{
-		return mReadTimeout;
-	}
+    public String getUrl() {
+        return mUrl;
+    }
 
-	public void setReadTimeout(int time)
-	{
-		mReadTimeout = time;
-	}
+    public void setUrl(String url) {
+        this.mUrl = url;
+    }
 
-	public boolean isUseCaches()
-	{
-		return mUseCaches;
-	}
+    public void addHeader(String name, String value) {
+        mHeaderMap.put(name, value);
+    }
 
-	public void setUseCaches(boolean useCaches)
-	{
-		this.mUseCaches = useCaches;
-	}
+    public void addHeader(String name, List<String> value) {
+        mHeaderMap.put(name, value);
+    }
 
-	public String getMethod()
-	{
-		return mMethod;
-	}
+    public Map<String, Object> getHeaders() {
+        return mHeaderMap;
+    }
 
-	public void setMethod(String method)
-	{
-		this.mMethod = method;
-	}
+    public int getConnectTimeout() {
+        return mConnectTimeout;
+    }
 
-	public boolean isInstanceFollowRedirects()
-	{
-		return mInstanceFollowRedirects;
-	}
+    public void setConnectTimeout(int time) {
+        mConnectTimeout = time;
+    }
 
-	public void setInstanceFollowRedirects(boolean instanceFollowRedirects)
-	{
-		this.mInstanceFollowRedirects = instanceFollowRedirects;
-	}
+    public int getReadTimeout() {
+        return mReadTimeout;
+    }
 
-	public String getBody()
-	{
-		return mBody;
-	}
+    public void setReadTimeout(int time) {
+        mReadTimeout = time;
+    }
 
-	public void setBody(String body)
-	{
-		this.mBody = body;
-	}
+    public boolean isUseCaches() {
+        return mUseCaches;
+    }
 
-	private void initUserAgent()
-	{
-		if (USER_AGENT == null)
-		{
-			Locale locale = Locale.getDefault();
-			StringBuffer buffer = new StringBuffer();
-			// Add version
-			final String version = Build.VERSION.RELEASE;
-			if (version.length() > 0)
-			{
-				buffer.append(version);
-			}
-			else
-			{
-				// default to "1.0"
-				buffer.append("1.0");
-			}
-			buffer.append("; ");
-			final String language = locale.getLanguage();
-			if (language != null)
-			{
-				buffer.append(language.toLowerCase());
-				final String country = locale.getCountry();
-				if (country != null)
-				{
-					buffer.append("-");
-					buffer.append(country.toLowerCase());
-				}
-			}
-			else
-			{
-				// default to "en"
-				buffer.append("en");
-			}
-			// add the model for the release build
-			if (android.os.Build.VERSION.SDK_INT > 3 && "REL".equals(Build.VERSION.CODENAME))
-			{
-				final String model = Build.MODEL;
-				if (model.length() > 0)
-				{
-					buffer.append("; ");
-					buffer.append(model);
-				}
-			}
-			final String id = Build.ID;
-			if (id.length() > 0)
-			{
-				buffer.append(" Build/");
-				buffer.append(id);
-			}
+    public void setUseCaches(boolean useCaches) {
+        this.mUseCaches = useCaches;
+    }
 
-			final String base = "Mozilla/5.0 (Linux; U; Android %s) AppleWebKit/533.1 (KHTML, like Gecko) Mobile Safari/533.1";
+    public String getMethod() {
+        return mMethod;
+    }
 
-			USER_AGENT = String.format(base, buffer);
-		}
-	}
+    public void setMethod(String method) {
+        this.mMethod = method;
+    }
 
+    public boolean isInstanceFollowRedirects() {
+        return mInstanceFollowRedirects;
+    }
+
+    public void setInstanceFollowRedirects(boolean instanceFollowRedirects) {
+        this.mInstanceFollowRedirects = instanceFollowRedirects;
+    }
+
+    public String getBody() {
+        return mBody;
+    }
+
+    public void setBody(String body) {
+        this.mBody = body;
+    }
+
+    private void initUserAgent() {
+        if (USER_AGENT == null) {
+            Locale locale = Locale.getDefault();
+            StringBuffer buffer = new StringBuffer();
+            // Add version
+            final String version = Build.VERSION.RELEASE;
+            if (version.length() > 0) {
+                buffer.append(version);
+            } else {
+                // default to "1.0"
+                buffer.append("1.0");
+            }
+            buffer.append("; ");
+            final String language = locale.getLanguage();
+            buffer.append(language.toLowerCase());
+            final String country = locale.getCountry();
+            buffer.append("-");
+            buffer.append(country.toLowerCase());
+            final String base = "Mozilla/5.0 (Linux; U; Android %s) AppleWebKit/533.1 (KHTML, like Gecko) Mobile Safari/533.1";
+            USER_AGENT = String.format(base, buffer);
+        }
+    }
 }

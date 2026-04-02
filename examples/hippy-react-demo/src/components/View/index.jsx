@@ -4,8 +4,9 @@ import {
   Text,
   View,
   StyleSheet,
-} from 'hippy-react';
-import MyView from '../../externals/MyView/MyView';
+} from '@hippy/react';
+
+import imageUrl from './defaultSource.jpg';
 
 const styles = StyleSheet.create({
   itemTitle: {
@@ -13,6 +14,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: 40,
     borderWidth: 1,
+    borderStyle: 'solid',
     borderColor: '#e0e0e0',
     borderRadius: 2,
     backgroundColor: '#fafafa',
@@ -29,6 +31,7 @@ const styles = StyleSheet.create({
     height: 100,
     borderColor: '#eee',
     borderWidth: 1,
+    borderStyle: 'solid',
     padding: 10,
     marginVertical: 10,
   },
@@ -46,11 +49,46 @@ export default function ViewExpo() {
     </View>
   );
   return (
-    <ScrollView style={{ padding: 10 }}>
+    <ScrollView style={{ paddingHorizontal: 10 }}>
       {renderTitle('backgroundColor')}
       <View style={[styles.rectangle, { backgroundColor: '#4c9afa' }]} />
+      {renderTitle('backgroundImage')}
+      <View style={[styles.rectangle, {
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 20,
+        backgroundImage: imageUrl,
+      }]}
+      accessible={true}
+      accessibilityLabel={'背景图'}
+      accessibilityRole={'image'}
+      accessibilityState={{
+        disabled: false,
+        selected: true,
+        checked: false,
+        expanded: false,
+        busy: true,
+      }}
+      accessibilityValue={{
+        min: 1,
+        max: 10,
+        now: 5,
+        text: 'middle',
+      }}
+    ><Text style={{ color: 'white' }}>背景图</Text></View>
+      {renderTitle('backgroundImage linear-gradient')}
+      <View style={[styles.rectangle, {
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 20,
+        borderWidth: 2,
+        borderStyle: 'solid',
+        borderColor: 'black',
+        borderRadius: 2,
+        backgroundImage: 'linear-gradient(30deg, blue 10%, yellow 40%, red 50%);',
+      }]} ><Text style={{ color: 'white' }}>渐变色</Text></View>
       {renderTitle('border props')}
-      <View style={[styles.rectangle, { borderColor: '#242424', borderRadius: 4, borderWidth: 1 }]} />
+      <View style={[styles.rectangle, { borderColor: '#242424', borderRadius: 4, borderWidth: 1, borderStyle: 'solid' }]} />
       {renderTitle('flex props')}
       <View style={[styles.bigRectangle, {
         flexDirection: 'row',
@@ -62,17 +100,6 @@ export default function ViewExpo() {
         <View style={[styles.smallRectangle, { backgroundColor: 'blue' }]} />
         <View style={[styles.smallRectangle, { backgroundColor: 'green' }]} />
       </View>
-      <MyView text="你好，我是MyView" style={{ width: 250, height: 100, color: 'black' }}>
-        <Text style={{
-          marginTop: 2,
-          marginLeft: 2,
-          fontSize: 8,
-          color: '#4c9afa',
-        }}
-        >
-          MyView内部的文字
-        </Text>
-      </MyView>
     </ScrollView>
   );
 }

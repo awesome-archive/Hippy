@@ -1,5 +1,5 @@
 /* Tencent is pleased to support the open source community by making Hippy available.
- * Copyright (C) 2018 THL A29 Limited, a Tencent company. All rights reserved.
+ * Copyright (C) 2018-2022 THL A29 Limited, a Tencent company. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,36 +15,52 @@
  */
 package com.tencent.mtt.hippy.bridge;
 
+import androidx.annotation.NonNull;
 import com.tencent.mtt.hippy.HippyEngine;
+import com.tencent.mtt.hippy.HippyEngine.BridgeTransferType;
 import com.tencent.mtt.hippy.HippyRootView;
+import com.tencent.mtt.hippy.adapter.thirdparty.HippyThirdPartyAdapter;
 import com.tencent.mtt.hippy.bridge.bundleloader.HippyBundleLoader;
 import com.tencent.mtt.hippy.common.Callback;
+import com.tencent.mtt.hippy.common.HippyJsException;
 import com.tencent.mtt.hippy.common.HippyMap;
 
+import java.nio.ByteBuffer;
 
-/**
- * FileName: HippyBridgeManager
- * Description：
- * History：
- */
-public interface HippyBridgeManager
-{
-	void initBridge(Callback<Boolean> callback);
+@SuppressWarnings({"deprecation", "unused"})
+public interface HippyBridgeManager {
 
-	void runBundle(int id, HippyBundleLoader loader, HippyEngine.ModuleListener listener, HippyRootView hippyRootView);
+  void initBridge(Callback<Boolean> callback);
 
-	void loadInstance(String name, int id, HippyMap params);
+  void runScript(@NonNull String script);
 
-	void resumeInstance(int id);
+  void runInJsThread(Callback<Void> callback);
 
-	void pauseInstance(int id);
+  void runBundle(int id, HippyBundleLoader loader, HippyEngine.ModuleListener listener,
+      HippyRootView hippyRootView);
 
-	void destroyInstance(int id);
+  void notifyModuleJsException(final HippyJsException exception);
 
-	void execCallback(Object params);
+  void loadInstance(String name, int id, HippyMap params);
 
-	void destroy();
+  void resumeInstance(int id);
 
-	void callJavaScriptModule(String mName, String name, Object params);
+  void pauseInstance(int id);
 
+  void destroyInstance(int id);
+
+  void execCallback(Object params, BridgeTransferType transferType);
+
+  void destroyBridge(Callback<Boolean> callback, boolean isReload);
+
+  void destroy();
+
+  void callJavaScriptModule(String mName, String name, Object params,
+      BridgeTransferType transferType);
+
+  HippyThirdPartyAdapter getThirdPartyAdapter();
+
+  long getV8RuntimeId();
+
+  void connectDebugUrl(String wsDebugUrl);
 }

@@ -1,52 +1,71 @@
+/*
+ * Tencent is pleased to support the open source community by making
+ * Hippy available.
+ *
+ * Copyright (C) 2017-2019 THL A29 Limited, a Tencent company.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 import './global';
-import {
-  HippyEventEmitter,
-  HippyEventListener,
-} from './events';
-import {
-  HippyRegister,
-  Device,
-  AsyncStorage,
-  Bridge,
-} from './native';
 import { colorParse } from './color';
-import Hippy from './hippy';
+import HippyReact from './hippy';
 import AppRegistry from './adapters/app-registry';
 import Animated from './adapters/animated';
 import Easing from './adapters/easing';
-import BackAndroid from './modules/back-android';
 import Animation from './modules/animation';
 import AnimationSet from './modules/animation-set';
-import View from './components/view';
-import Text from './components/text';
-import Image from './components/image';
-import ListView from './components/list-view';
-import RefreshWrapper from './components/refresh-wrapper';
-import Navigator from './components/navigator';
-import ViewPager from './components/view-pager';
-import TextInput from './components/text-input';
-import ScrollView from './components/scroll-view';
-import Modal from './components/modal';
-import Focusable from './components/focusable';
-import WebView from './components/web-view';
-import * as Clipboard from './modules/clipboard';
-import * as ImageLoaderModule from './modules/image-loader-module';
-import * as NetInfo from './modules/net-info';
-import * as NetworkModule from './modules/network-module';
-import * as StyleSheet from './modules/stylesheet';
-import * as UIManagerModule from './modules/ui-manager-module';
+import WebSocket from './modules/websocket';
+import * as Native from './native';
+export * from './modules/stylesheet';
+export * from './event';
+export * from './components';
+export * from './dom';
+export * from './types';
 
-const { __GLOBAL__ } = global;
+global.WebSocket = WebSocket as HippyTypes.WebSocket;
 
-const GlobalEventEmitter = new HippyEventEmitter();
+const {
+  AsyncStorage,
+  BackAndroid,
+  Bridge,
+  Clipboard,
+  Cookie: NetworkModule,
+  Device,
+  HippyRegister,
+  ImageLoader: ImageLoaderModule,
+  NetworkInfo: NetInfo,
+  UIManager: UIManagerModule,
+  flushSync,
+} = Native;
 
-GlobalEventEmitter.addListener('startPerformanceMonitor', () => {
-  __GLOBAL__.report_js_trace = true;
-});
+const {
+  callNative,
+  callNativeWithPromise,
+  callNativeWithCallbackId,
+  removeNativeCallback,
+} = Bridge;
 
-GlobalEventEmitter.addListener('endPerformanceMonitor', () => {
-  __GLOBAL__.report_js_trace = false;
-});
+const TimerModule = null;
+// @ts-ignore
+const ConsoleModule = global.ConsoleModule || global.console;
+const Platform = Device.platform;
+const Hippy = HippyReact;
+const RNfqb = HippyReact;
+
+// Forward compatibilities
+const RNfqbRegister = HippyRegister;
 
 const Dimensions = {
   get(name: 'window' | 'screen') {
@@ -60,41 +79,20 @@ const PixelRatio = {
   },
 };
 
-const {
-  callNative,
-  callNativeWithPromise,
-  callNativeWithCallbackId,
-  removeNativeCallback,
-} = Bridge;
-const TimerModule = null;
-const ConsoleModule = console;
-const Platform = Device.platform;
-const RNfqb = Hippy;
-const ImageBackground = Image;
-
-// Forward compatibilities
-const RNfqbRegister = HippyRegister;
-const RNfqbEventEmitter = HippyEventEmitter;
-const RNfqbEventListener = HippyEventListener;
-
 export {
+  flushSync,
   colorParse,
   callNative,
   callNativeWithPromise,
   callNativeWithCallbackId,
   removeNativeCallback,
   RNfqbRegister,
-  RNfqbEventEmitter,
-  RNfqbEventListener,
   HippyRegister,
-  HippyEventEmitter,
-  HippyEventListener,
   AsyncStorage,
   AppRegistry,
   Animated,
   Easing,
   UIManagerModule,
-  StyleSheet,
   Dimensions,
   PixelRatio,
   TimerModule,
@@ -109,17 +107,9 @@ export {
   AnimationSet,
   Hippy,
   RNfqb,
-  View,
-  Text,
-  Image,
-  ListView,
-  RefreshWrapper,
-  Navigator,
-  ViewPager,
-  TextInput,
-  ScrollView,
-  Modal,
-  Focusable,
-  WebView,
-  ImageBackground,
+  WebSocket,
 };
+type Style = HippyTypes.Style;
+type HippyTypes = typeof HippyTypes;
+export type { Style, HippyTypes };
+export default HippyReact;

@@ -45,8 +45,7 @@ HIPPY_EXPORT_MODULE(EventObserver)
     return self;
 }
 
-HIPPY_EXPORT_METHOD(addListener:(NSString *)eventName)
-{
+HIPPY_EXPORT_METHOD(addListener:(NSString *)eventName) {
     HippyAssertParam(eventName);
     NSNumber *value = _config[eventName];
     if (value == nil) {
@@ -58,8 +57,7 @@ HIPPY_EXPORT_METHOD(addListener:(NSString *)eventName)
     _config[eventName] = value;
 }
 
-HIPPY_EXPORT_METHOD(removeListener:(NSString *)eventName)
-{
+HIPPY_EXPORT_METHOD(removeListener:(NSString *)eventName) {
     NSNumber *value = _config[eventName];
     if (value == nil || value.integerValue == 1) {
         [_config removeObjectForKey: eventName];

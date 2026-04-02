@@ -1,3 +1,5 @@
-node_modules
-dist
+docs/
+dist/
 coverage
+packages/hippy-vue/types
+packages/hippy-vue-loader/lib

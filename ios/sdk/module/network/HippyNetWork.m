@@ -1,24 +1,24 @@
 /*!
-* iOS SDK
-*
-* Tencent is pleased to support the open source community by making
-* Hippy available.
-*
-* Copyright (C) 2019 THL A29 Limited, a Tencent company.
-* All rights reserved.
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
+ * iOS SDK
+ *
+ * Tencent is pleased to support the open source community by making
+ * Hippy available.
+ *
+ * Copyright (C) 2019 THL A29 Limited, a Tencent company.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #import "HippyNetWork.h"
 #import "HippyAssert.h"
@@ -28,6 +28,8 @@
 #import "HippyUtils.h"
 #import "HippyFetchInfo.h"
 #import "objc/runtime.h"
+#import "HippyUtils.h"
+#import "HippyWeakProxy.h"
 
 static char fetchInfoKey;
 
@@ -41,11 +43,15 @@ HippyFetchInfo *fetchInfoForSessionTask(NSURLSessionTask *task) {
 }
 
 @implementation HippyNetWork
+{
+    NSURLSession *_session;
+}
 
 HIPPY_EXPORT_MODULE(network)
 
-HIPPY_EXPORT_METHOD(fetch:(NSDictionary *)params resolver:(__unused HippyPromiseResolveBlock)resolve rejecter:(__unused HippyPromiseRejectBlock)reject)
-{
+HIPPY_EXPORT_METHOD(fetch:(NSDictionary *)params
+                    resolver:(HippyPromiseResolveBlock)resolve
+                    rejecter:(HippyPromiseRejectBlock)reject) {
     NSString *method = params[@"method"];
     NSString *url = params[@"url"];
     NSDictionary *header = params[@"headers"];
@@ -60,10 +66,10 @@ HIPPY_EXPORT_METHOD(fetch:(NSDictionary *)params resolver:(__unused HippyPromise
 	
     NSURL *requestURL = HippyURLWithString(url, NULL);
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:requestURL];
-    [request setHTTPMethod: method];
+    [request setHTTPMethod:method];
 	
 	NSMutableDictionary *httpHeader = [NSMutableDictionary new];
-	[header enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, id  _Nonnull obj, __unused BOOL *stop) {
+	[header enumerateKeysAndObjectsUsingBlock:^(id _Nonnull key, id _Nonnull obj, __unused BOOL *stop) {
 		NSString *value = nil;
 		if ([obj isKindOfClass: [NSArray class]]) {
 			value = [[(NSArray *)obj valueForKey:@"description"] componentsJoinedByString:@","];
@@ -74,10 +80,12 @@ HIPPY_EXPORT_METHOD(fetch:(NSDictionary *)params resolver:(__unused HippyPromise
 		[httpHeader setValue: value forKey: key];
 	}];
     if (httpHeader.count) {
-		[request setAllHTTPHeaderFields: httpHeader];
+		[request setAllHTTPHeaderFields:httpHeader];
 	}
     NSDictionary<NSString *, NSString *> *extraHeaders = [self extraHeaders];
-    [extraHeaders enumerateKeysAndObjectsUsingBlock:^(NSString * _Nonnull key, NSString * _Nonnull obj, BOOL * _Nonnull stop) {
+    [extraHeaders enumerateKeysAndObjectsUsingBlock:^(NSString * _Nonnull key,
+                                                      NSString * _Nonnull obj,
+                                                      BOOL * _Nonnull stop) {
         [request addValue:obj forHTTPHeaderField:key];
     }];
     
@@ -89,75 +97,84 @@ HIPPY_EXPORT_METHOD(fetch:(NSDictionary *)params resolver:(__unused HippyPromise
     }
     NSString *redirect = params[@"redirect"];
     BOOL report302Status = (nil == redirect || [redirect isEqualToString:@"manual"]);
-    HippyFetchInfo *fetchInfo = [[HippyFetchInfo alloc] initWithResolveBlock:resolve rejectBlock:reject report302Status:report302Status];
-    NSURLSessionConfiguration *sessionConfiguration = [NSURLSessionConfiguration defaultSessionConfiguration];
-    sessionConfiguration.protocolClasses = [self protocolClasses];
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfiguration delegate:self delegateQueue:nil];
-    NSURLSessionTask *task = [session dataTaskWithRequest:request];
+    HippyFetchInfo *fetchInfo = [[HippyFetchInfo alloc] initWithResolveBlock:resolve
+                                                                 rejectBlock:reject
+                                                             report302Status:report302Status];
+    
+    // Lazy setup session
+    if (!_session) {
+        NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
+        configuration.protocolClasses = [self protocolClasses];
+        _session = [NSURLSession sessionWithConfiguration:configuration
+                                                 delegate:(id)[HippyWeakProxy weakProxyForObject:self]
+                                            delegateQueue:nil];
+    }
+    NSURLSessionTask *task = [_session dataTaskWithRequest:request];
     setFetchInfoForSessionTask(task, fetchInfo);
     [task resume];
 }
 
-- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
-willPerformHTTPRedirection:(NSHTTPURLResponse *)response
-        newRequest:(NSURLRequest *)request
- completionHandler:(void (^)(NSURLRequest * _Nullable))completionHandler {
+- (void)URLSession:(NSURLSession *)session
+                          task:(NSURLSessionTask *)task
+    willPerformHTTPRedirection:(NSHTTPURLResponse *)response
+                    newRequest:(NSURLRequest *)request
+             completionHandler:(void (^)(NSURLRequest *_Nullable))completionHandler {
     HippyFetchInfo *fetchInfo = fetchInfoForSessionTask(task);
     if (fetchInfo.report302Status) {
         HippyPromiseResolveBlock resolver = fetchInfo.resolveBlock;
         if (resolver) {
-            NSDictionary *result = @{
-                                     @"statusCode": @(response.statusCode),
-                                     @"statusLine": @"",
-                                     @"respHeaders": response.allHeaderFields ? : @{},
-                                     @"respBody": @""
-                                     };
-            
+            NSDictionary *result =
+            @{
+                @"statusCode": @(response.statusCode),
+                @"statusLine": @"",
+                @"respHeaders": response.allHeaderFields ?: @{},
+                @"respBody": @""
+            };
             resolver(result);
         }
         completionHandler(nil);
-    }
-    else {
+    } else {
         completionHandler(request);
     }
 }
 
-- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
-didCompleteWithError:(nullable NSError *)error {
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(nullable NSError *)error {
     BOOL is302Response = ([task.response isKindOfClass:[NSHTTPURLResponse class]] && 302 == [(NSHTTPURLResponse *)task.response statusCode]);
     HippyFetchInfo *fetchInfo = fetchInfoForSessionTask(task);
-    //如果是302并且禁止自动跳转，那说明已经将302结果发送给服务器，不需要再次发送
     if (is302Response && fetchInfo.report302Status) {
+        setFetchInfoForSessionTask(task, nil);
         return;
     }
     if (error) {
         HippyPromiseRejectBlock rejector = fetchInfo.rejectBlock;
         NSString *code = [NSString stringWithFormat:@"%ld", (long)error.code];
-        rejector(code,error.description, error);
-    }
-    else {
+        rejector(code, error.description, error);
+    } else {
         HippyPromiseResolveBlock resolver = fetchInfo.resolveBlock;
         NSData *data = fetchInfo.fetchData;
-        NSString *dataStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-        NSHTTPURLResponse *resp = (NSHTTPURLResponse *) task.response;
-        NSDictionary *result = @{
-                                 @"statusCode": @(resp.statusCode),
-                                 @"statusLine": @"",
-                                 @"respHeaders": resp.allHeaderFields ? : @{},
-                                 @"respBody": dataStr ? : @""
-                                 };
-        
+        NSStringEncoding dataEncoding = HippyGetStringEncodingFromURLResponse(task.response);
+        NSString *dataStr = [[NSString alloc] initWithData:data encoding:dataEncoding];
+        NSHTTPURLResponse *resp = (NSHTTPURLResponse *)task.response;
+        NSDictionary *result =
+        @{
+            @"statusCode": @(resp.statusCode),
+            @"statusLine": @"",
+            @"respHeaders": resp.allHeaderFields ?: @ {},
+            @"respBody": dataStr ?: @""
+        };
         resolver(result);
     }
+    setFetchInfoForSessionTask(task, nil);
 }
 
-- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask
+- (void)URLSession:(NSURLSession *)session
+          dataTask:(NSURLSessionDataTask *)dataTask
     didReceiveData:(NSData *)data {
     NSMutableData *fetchData = fetchInfoForSessionTask(dataTask).fetchData;
     [fetchData appendData:data];
 }
 
-- (NSArray<Class> *) protocolClasses {
+- (NSArray<Class> *)protocolClasses {
     return [NSArray array];
 }
 
@@ -165,7 +182,12 @@ didCompleteWithError:(nullable NSError *)error {
     return nil;
 }
 
-HIPPY_EXPORT_METHOD(getCookie:(NSString *)urlString resolver:(HippyPromiseResolveBlock)resolve rejecter:(__unused HippyPromiseRejectBlock)reject) {
+
+#pragma mark - Cookie Related
+
+HIPPY_EXPORT_METHOD(getCookie:(NSString *)urlString
+                    resolver:(HippyPromiseResolveBlock)resolve
+                    rejecter:(__unused HippyPromiseRejectBlock)reject) {
     NSData *uriData = [urlString dataUsingEncoding:NSUTF8StringEncoding];
     if (nil == uriData) {
         resolve(@"");
@@ -184,7 +206,9 @@ HIPPY_EXPORT_METHOD(getCookie:(NSString *)urlString resolver:(HippyPromiseResolv
     resolve(string);
 }
 
-HIPPY_EXPORT_METHOD(setCookie:(NSString *)urlString keyValue:(NSString *)keyValue expireString:(NSString *)expireString) {
+HIPPY_EXPORT_METHOD(setCookie:(NSString *)urlString
+                    keyValue:(NSString *)keyValue
+                    expireString:(NSString *)expireString) {
     NSData *uriData = [urlString dataUsingEncoding:NSUTF8StringEncoding];
     if (nil == uriData) {
         return;
@@ -194,6 +218,11 @@ HIPPY_EXPORT_METHOD(setCookie:(NSString *)urlString keyValue:(NSString *)keyValu
         return;
     }
     NSURL *source_url = CFBridgingRelease(urlRef);
+    keyValue = [keyValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (![keyValue length]) {
+        [self deleteCookiesForURL:source_url];
+        return;
+    }
     NSArray<NSString *> *keysvalues = [keyValue componentsSeparatedByString:@";"];
     NSMutableArray<NSHTTPCookie *>* cookies = [NSMutableArray arrayWithCapacity:[keysvalues count]];
     NSString *path = [source_url path];
@@ -205,11 +234,38 @@ HIPPY_EXPORT_METHOD(setCookie:(NSString *)urlString keyValue:(NSString *)keyValu
         for (NSString *allValues in keysvalues) {
             @autoreleasepool {
                 NSArray<NSString *> *value = [allValues componentsSeparatedByString:@"="];
-                NSDictionary *dictionary = @{NSHTTPCookieName: value[0], NSHTTPCookieValue: value[1], NSHTTPCookieExpires: expireString, NSHTTPCookiePath: path, NSHTTPCookieDomain: domain};
-                NSHTTPCookie *cookie = [NSHTTPCookie cookieWithProperties:dictionary];
+                if ([value count] < 2) {
+                    continue;
+                }
+                static dispatch_once_t onceToken;
+                static NSDateFormatter *dateFormatter = nil;
+                dispatch_once(&onceToken, ^{
+                    dateFormatter = [[NSDateFormatter alloc] init];
+                    //Thu, 21-Jan-2023 00:00:00 GMT
+                    dateFormatter.dateFormat = @"EEE, dd-MM-yyyy HH:mm:ss zzz";
+                });
+                NSMutableDictionary *cookiesData = [@{NSHTTPCookieName: value[0], NSHTTPCookiePath: path, NSHTTPCookieDomain: domain} mutableCopy];
+                NSString *cookieValue = [value[1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                //set cookie value for cookie object
+                //if cookie value is empty, we assume this cookie should be deleted
+                if ([cookieValue length]) {
+                    [cookiesData setObject:cookieValue forKey:NSHTTPCookieValue];
+                }
+                else {
+                    [cookiesData setObject:@"" forKey:NSHTTPCookieValue];
+                    [cookiesData setObject:@(0) forKey:NSHTTPCookieMaximumAge];
+                }
+                //set cookie expire date
+                if ([expireString length]) {
+                    NSDate *expireDate = [dateFormatter dateFromString:expireString];
+                    if (expireDate) {
+                        [cookiesData setObject:expireDate forKey:NSHTTPCookieExpires];
+                    }
+                }
+                NSHTTPCookie *cookie = [NSHTTPCookie cookieWithProperties:cookiesData];
                 if (cookie) {
                     [cookies addObject:cookie];
-                    //给ios11以上的系统设置WKCookie
+                    //set WKCookie for system version abover iOS11
                     if (@available(iOS 11.0, *)) {
                         WKWebsiteDataStore *ds = [WKWebsiteDataStore defaultDataStore];
                         [ds.httpCookieStore setCookie:cookie completionHandler:NULL];
@@ -219,6 +275,27 @@ HIPPY_EXPORT_METHOD(setCookie:(NSString *)urlString keyValue:(NSString *)keyValu
         }
         [[NSHTTPCookieStorage sharedHTTPCookieStorage] setCookies:cookies forURL:source_url mainDocumentURL:nil];
     });
+}
+
+- (void)deleteCookiesForURL:(NSURL *)url {
+    NSString *path = [[url path] isEqualToString:@""]?@"/":[url path];
+    NSString *domain = [url host];
+    if (@available(iOS 11.0, *)) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            WKWebsiteDataStore *ds = [WKWebsiteDataStore defaultDataStore];
+            [ds.httpCookieStore getAllCookies:^(NSArray<NSHTTPCookie *> * cookies) {
+                for (NSHTTPCookie *cookie in cookies) {
+                    if ([cookie.domain isEqualToString:domain] && [cookie.path isEqualToString:path]) {
+                        [ds.httpCookieStore deleteCookie:cookie completionHandler:NULL];
+                    }
+                }
+            }];
+        });
+    }
+    NSArray<NSHTTPCookie *> *cookies = [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookiesForURL:url];
+    for (NSHTTPCookie *cookie in cookies) {
+        [[NSHTTPCookieStorage sharedHTTPCookieStorage] deleteCookie:cookie];
+    }
 }
 
 @end

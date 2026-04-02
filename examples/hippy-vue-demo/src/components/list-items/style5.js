@@ -1,17 +1,17 @@
 import Vue from 'vue';
 
-Vue.component('style-five', {
+export default Vue.component('StyleFive', {
   inheritAttrs: false,
   props: ['itemBean'],
   template: `
   <div class="list-view-item style-five">
-    <p numberOfLines="2" enableScale="true" class="article-title">
+    <p :numberOfLines="2" :enableScale="true" class="article-title">
         {{ itemBean.title }}
     </p>
     <div class="style-five-image-container">
         <img :src="itemBean.picUrl" class="image" />
     </div>
-    <div class="tag-line">
+    <div :style="{ alignSelf: 'flex-start', marginTop: '5px' }">
       <p class="normal-text">
         {{ itemBean.subInfo.join(' ') }}
       </p>

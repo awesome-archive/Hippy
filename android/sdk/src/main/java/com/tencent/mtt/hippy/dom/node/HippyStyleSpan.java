@@ -17,45 +17,38 @@ package com.tencent.mtt.hippy.dom.node;
 
 import android.text.TextPaint;
 import android.text.style.MetricAffectingSpan;
+import com.tencent.mtt.hippy.adapter.font.HippyFontScaleAdapter;
+import java.lang.ref.WeakReference;
 
-/**
- * @author: edsheng
- * @date: 2017/11/30 14:39
- * @version: V1.0
- */
+@SuppressWarnings({"unused"})
+public class HippyStyleSpan extends MetricAffectingSpan {
 
-public class HippyStyleSpan extends MetricAffectingSpan
-{
+  private final int mStyle;
+  private final int mWeight;
+  private final String mFontFamily;
+  private final WeakReference<HippyFontScaleAdapter> fontAdapterRef;
 
-	private final int			mStyle;
-	private final int			mWeight;
-	private final String		mFontFamily;
+  public HippyStyleSpan(int fontStyle, int fontWeight, String fontFamily,
+      HippyFontScaleAdapter adapter) {
+    mStyle = fontStyle;
+    mWeight = fontWeight;
+    mFontFamily = fontFamily;
+    fontAdapterRef = new WeakReference<>(adapter);
+  }
 
-	public HippyStyleSpan(int fontStyle, int fontWeight, String fontFamily)
-	{
-		mStyle = fontStyle;
-		mWeight = fontWeight;
-		mFontFamily = fontFamily;
-	}
+  @Override
+  public void updateDrawState(TextPaint ds) {
+    TypeFaceUtil.apply(ds, mStyle, mWeight, mFontFamily, fontAdapterRef.get());
+  }
 
-	@Override
-	public void updateDrawState(TextPaint ds)
-	{
-		TypeFaceUtil.apply(ds, mStyle, mWeight, mFontFamily);
-	}
+  @Override
+  public void updateMeasureState(TextPaint paint) {
+    TypeFaceUtil.apply(paint, mStyle, mWeight, mFontFamily, fontAdapterRef.get());
+  }
 
-	@Override
-	public void updateMeasureState(TextPaint paint)
-	{
-		TypeFaceUtil.apply(paint, mStyle, mWeight, mFontFamily);
-	}
-
-	public int getStyle()
-	{
-		return (mStyle == TextNode.UNSET ? 0 : mStyle);
-	}
-
-
+  public int getStyle() {
+    return (mStyle == TextNode.UNSET ? 0 : mStyle);
+  }
 
 
 }
